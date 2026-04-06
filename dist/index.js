@@ -29952,7 +29952,8 @@ async function executeStage(params) {
   return {
     stageId: params.stage.id,
     label: params.stage.label,
-    output
+    output,
+    prompt: JSON.stringify(messages, null, 2)
   };
 }
 async function runReviewArchitecture(params) {
@@ -29986,7 +29987,8 @@ async function runReviewArchitecture(params) {
       request,
       modelOutput: modelOutput2,
       stageOutputs,
-      rawOutput: stageResult.output
+      rawOutput: stageResult.output,
+      prompt: stageResult.prompt
     });
     logger.info("Review run completed", {
       architectureId: architecture.id,
@@ -30028,7 +30030,8 @@ async function runReviewArchitecture(params) {
       request,
       modelOutput: modelOutput2,
       stageOutputs,
-      rawOutput: finalStageResult.output
+      rawOutput: finalStageResult.output,
+      prompt: finalStageResult.prompt
     });
     logger.info("Review run completed", {
       architectureId: architecture.id,
@@ -30082,7 +30085,8 @@ async function runReviewArchitecture(params) {
     request,
     modelOutput,
     stageOutputs,
-    rawOutput: combineResult.output
+    rawOutput: combineResult.output,
+    prompt: combineResult.prompt
   });
   logger.info("Review run completed", {
     architectureId: architecture.id,

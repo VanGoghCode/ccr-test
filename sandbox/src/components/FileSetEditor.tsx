@@ -1,9 +1,9 @@
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
-import { type FileDraft, createImportedFileDrafts } from "../state";
+import { type SandboxFileDraft, createImportedFileDrafts } from "../state";
 
 export interface FileSetEditorProps {
-  fileDrafts: FileDraft[];
-  onImportFiles: (fileDrafts: FileDraft[]) => void;
+  fileDrafts: SandboxFileDraft[];
+  onImportFiles: (fileDrafts: SandboxFileDraft[]) => void;
   onRemoveFile: (fileId: string) => void;
   metadata: string;
   onChangeMetadata: (metadata: string) => void;

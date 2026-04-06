@@ -128,6 +128,7 @@ export interface StageExecutionResult {
   stageId: string;
   label: string;
   output: string;
+  prompt: string;
 }
 
 export interface ReviewRunResult {

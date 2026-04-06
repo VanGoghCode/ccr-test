@@ -177,6 +177,7 @@ async function executeStage(params: {
     stageId: params.stage.id,
     label: params.stage.label,
     output,
+    prompt: JSON.stringify(messages, null, 2),
   };
 }
 
@@ -222,6 +223,7 @@ export async function runReviewArchitecture(params: {
       modelOutput,
       stageOutputs,
       rawOutput: stageResult.output,
+      prompt: stageResult.prompt,
     });
 
     logger.info("Review run completed", {
@@ -269,6 +271,7 @@ export async function runReviewArchitecture(params: {
       modelOutput,
       stageOutputs,
       rawOutput: finalStageResult.output,
+      prompt: finalStageResult.prompt,
     });
 
     logger.info("Review run completed", {
@@ -329,6 +332,7 @@ export async function runReviewArchitecture(params: {
     modelOutput,
     stageOutputs,
     rawOutput: combineResult.output,
+    prompt: combineResult.prompt,
   });
 
   logger.info("Review run completed", {

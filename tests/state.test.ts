@@ -3,27 +3,27 @@ import {
   buildReviewRequest,
   createEmptyFileDraft,
   createImportedFileDrafts,
-  createInitialState,
-  appReducer,
+  createInitialSandboxState,
+  sandboxReducer,
 } from "../sandbox/src/state";
 
 describe("app state", () => {
   it("adds and removes file sets without forcing a fallback row", () => {
-    let state = createInitialState();
+    let state = createInitialSandboxState();
     expect(state.fileDrafts).toHaveLength(0);
 
-    state = appReducer(state, { type: "add-file" });
+    state = sandboxReducer(state, { type: "add-file" });
     expect(state.fileDrafts).toHaveLength(1);
 
     const firstFileId = state.fileDrafts[0].id;
 
-    state = appReducer(state, { type: "remove-file", fileId: firstFileId });
+    state = sandboxReducer(state, { type: "remove-file", fileId: firstFileId });
     expect(state.fileDrafts).toHaveLength(0);
   });
 
   it("builds a review request from the form", () => {
     const state = {
-      ...createInitialState(),
+      ...createInitialSandboxState(),
       selectedArchitectureId: "parallel",
       metadata: "demo metadata",
       fileDrafts: [
@@ -47,22 +47,22 @@ describe("app state", () => {
     const { loadAvailableArchitectures } = await import("../src/core/manifest");
     const architectures = await loadAvailableArchitectures("prompts");
 
-    let state = appReducer(createInitialState(), {
+    let state = sandboxReducer(createInitialSandboxState(), {
       type: "set-architectures",
       architectures,
     });
 
-    state = appReducer(state, {
+    state = sandboxReducer(state, {
       type: "select-architecture",
       architectureId: "parallel",
     });
-    state = appReducer(state, {
+    state = sandboxReducer(state, {
       type: "update-prompt",
       architectureId: "parallel",
       promptId: "stage-1",
       value: "one",
     });
-    state = appReducer(state, {
+    state = sandboxReducer(state, {
       type: "merge-prompt-drafts",
       architectureId: "parallel",
       promptDrafts: {
@@ -93,7 +93,7 @@ describe("app state", () => {
 
   it("accepts blank file fields when building a review request", () => {
     const state = {
-      ...createInitialState(),
+      ...createInitialSandboxState(),
       selectedArchitectureId: "single-pass",
       fileDrafts: [
         {
@@ -130,7 +130,7 @@ describe("app state", () => {
       },
     ];
 
-    const state = appReducer(createInitialState(), {
+    const state = sandboxReducer(createInitialSandboxState(), {
       type: "replace-file-drafts",
       fileDrafts: importedDrafts,
     });

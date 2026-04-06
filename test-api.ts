@@ -9,8 +9,8 @@ async function run() {
     console.log("Using model:", config.model);
     console.log("Using provider:", config.modelProvider);
     
-    const prompt = "Explain quantum computing in 1 sentence.";
-    const response = await requestAsuAimlChatCompletion(config, prompt);
+    const messages = [{ role: "user" as const, content: "Explain quantum computing in 1 sentence." }];
+    const response = await requestAsuAimlChatCompletion(config, messages);
     
     console.log("\n✅ Response Received:");
     console.log(response);

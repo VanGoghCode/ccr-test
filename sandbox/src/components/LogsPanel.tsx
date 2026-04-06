@@ -1,7 +1,7 @@
-import type { LogItem } from "../state";
+import type { SandboxLogItem } from "../state";
 
 export interface LogsPanelProps {
-  logs: LogItem[];
+  logs: SandboxLogItem[];
   errorMessage?: string;
 }
 
