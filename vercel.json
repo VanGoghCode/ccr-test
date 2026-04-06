@@ -4,7 +4,12 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
+      "destination": "/api/index.ts"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "prompts/**"
+    }
+  }
 }
