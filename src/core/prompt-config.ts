@@ -1,4 +1,4 @@
-import type { LoadedPromptArchitecture } from "./types";
+import type { LoadedPromptArchitecture } from "./types.js";
 
 export type PromptDraftMap = Record<string, string>;
 

@@ -1,12 +1,12 @@
 import type {
   AsuAimlProviderConfig,
   OpenAiCompatibleProviderConfig,
-} from "./api";
+} from "./api.js";
 import type {
   ReviewProvider,
   ReviewProviderMessage,
   ReviewProviderRequest,
-} from "./types";
+} from "./types.js";
 
 function toCompletionUrl(baseUrl: string): string {
   return new URL(

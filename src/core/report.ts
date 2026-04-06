@@ -6,7 +6,7 @@ import type {
   ReviewReport,
   ReviewRequest,
   StageExecutionResult,
-} from "./types";
+} from "./types.js";
 
 const findingSchema = z.object({
   severity: z.enum(["low", "medium", "high"]),

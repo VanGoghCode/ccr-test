@@ -1,4 +1,4 @@
-import { parseReviewModelOutput, renderReviewMarkdown } from "./report";
+import { parseReviewModelOutput, renderReviewMarkdown } from "./report.js";
 import type {
   LoadedPromptArchitecture,
   ReviewLogger,
@@ -7,7 +7,7 @@ import type {
   ReviewRequest,
   ReviewRunResult,
   StageExecutionResult,
-} from "./types";
+} from "./types.js";
 
 function truncateText(value: string, limit: number): string {
   if (value.length <= limit) {

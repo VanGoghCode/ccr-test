@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import picomatch from "picomatch";
-import type { ReviewContext, ReviewFileInput } from "./types";
+import type { ReviewContext, ReviewFileInput } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 

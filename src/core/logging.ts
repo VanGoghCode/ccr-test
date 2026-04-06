@@ -1,4 +1,4 @@
-import type { LogEntry, LogSink, ReviewLogger } from "./types";
+import type { LogEntry, LogSink, ReviewLogger } from "./types.js";
 
 function createEntry(
   level: LogEntry["level"],

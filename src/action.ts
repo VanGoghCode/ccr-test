@@ -1,16 +1,16 @@
 import path from "node:path";
 import * as core from "@actions/core";
 import { context } from "@actions/github";
-import { createOpenAiCompatibleProviderConfig } from "./core/api";
-import { runReviewArchitecture } from "./core/engine";
+import { createOpenAiCompatibleProviderConfig } from "./core/api.js";
+import { runReviewArchitecture } from "./core/engine.js";
 import {
   collectReviewContext,
   collectReviewFiles,
   resolveGitRange,
-} from "./core/git";
-import { createOpenAiCompatibleProvider } from "./core/llm";
-import { createLogger } from "./core/logging";
-import { loadArchitectureById } from "./core/manifest";
+} from "./core/git.js";
+import { createOpenAiCompatibleProvider } from "./core/llm.js";
+import { createLogger } from "./core/logging.js";
+import { loadArchitectureById } from "./core/manifest.js";
 
 function readCsvInput(name: string, fallback: string): string[] {
   const raw = core.getInput(name) || fallback;

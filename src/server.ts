@@ -5,20 +5,20 @@ import express from "express";
 import {
   readAsuAimlProviderConfig,
   readOpenAiCompatibleProviderConfig,
-} from "./core/api";
-import { runReviewArchitecture } from "./core/engine";
+} from "./core/api.js";
+import { runReviewArchitecture } from "./core/engine.js";
 import {
   createAsuAimlProvider,
   createOpenAiCompatibleProvider,
-} from "./core/llm";
-import { createLogger } from "./core/logging";
+} from "./core/llm.js";
+import { createLogger } from "./core/logging.js";
 import {
   applyPromptOverrides,
   loadArchitectureById,
   loadAvailableArchitectures,
   validatePromptCoverage,
-} from "./core/manifest";
-import type { LogEntry, ReviewProvider, ReviewRequest } from "./core/types";
+} from "./core/manifest.js";
+import type { LogEntry, ReviewProvider, ReviewRequest } from "./core/types.js";
 
 const repositoryRoot = process.cwd();
 const promptRoot = process.env.PROMPT_ROOT || "prompts";

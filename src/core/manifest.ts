@@ -5,14 +5,14 @@ import {
   createPromptDraftMap,
   getMissingPromptLabels,
   normalizePromptImport,
-} from "./prompt-config";
-import { readPromptText, resolvePromptRoot } from "./prompt-loader";
+} from "./prompt-config.js";
+import { readPromptText, resolvePromptRoot } from "./prompt-loader.js";
 import type {
   LoadedPromptArchitecture,
   LoadedPromptStage,
   PromptArchitectureManifest,
   PromptStageManifest,
-} from "./types";
+} from "./types.js";
 
 const stageSchema = z.object({
   id: z.string().min(1),
