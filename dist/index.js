@@ -29786,8 +29786,11 @@ function renderReviewMarkdown(params) {
     `- Files reviewed: ${request.files.length}`,
     request.context?.repositoryName ? `- Repository: ${request.context.repositoryName}` : void 0,
     request.context?.baseRef ? `- Base ref: ${request.context.baseRef}` : void 0,
-    request.context?.headRef ? `- Head ref: ${request.context.headRef}` : void 0
+    request.context?.headRef ? `- Head ref: ${request.context.headRef}` : void 0,
+    request.context?.commitMessages?.length ? `- Commits in range: ${request.context.commitMessages.length}` : void 0
   ].filter((line) => Boolean(line));
+  const commitMessages = request.context?.commitMessages ?? [];
+  const commitMessageList = commitMessages.length > 0 ? commitMessages.map((message) => `- ${markdownEscape(message)}`).join("\n") : "- None";
   const fileInventory = request.files.map((file) => {
     const label = file.status ? `${file.status} \xB7 ${file.path}` : file.path;
     return `- ${markdownEscape(label)}${file.previousPath ? ` (from ${markdownEscape(file.previousPath)})` : ""}`;
@@ -29818,6 +29821,9 @@ function renderReviewMarkdown(params) {
     "",
     "### Review Context",
     ...contextLines,
+    "",
+    "### Commit Messages",
+    commitMessageList,
     "",
     "### Files in Scope",
     fileInventory || "- None",
@@ -29889,9 +29895,13 @@ function buildRequestEnvelope(request, previousOutputs, stageIndex, stageCount, 
     Math.floor(maxContextChars / Math.max(request.files.length * 2, 1))
   );
   const previousOutputBudget = Math.max(500, Math.floor(maxContextChars / 4));
+  const commitMessageBudget = Math.max(120, Math.floor(maxContextChars / 10));
   const reviewContext = request.context ? {
     ...request.context,
-    metadata: request.context.metadata ? truncateText(request.context.metadata, previousOutputBudget) : void 0
+    metadata: request.context.metadata ? truncateText(request.context.metadata, previousOutputBudget) : void 0,
+    commitMessages: request.context.commitMessages?.map(
+      (message) => truncateText(message, commitMessageBudget)
+    )
   } : void 0;
   return JSON.stringify(
     {
@@ -29930,6 +29940,7 @@ function buildSystemMessage(architecture, stageLabel, stagePurpose, mode) {
     "Risk level must be one of low, medium, or high.",
     "Findings should be an array of objects with severity, title, detail, optional file, optional line, optional endLine, and optional recommendation or suggestion fields.",
     "When a finding maps to a changed file, set file and line to the changed-line anchor in the head revision.",
+    "Use reviewContext.commitMessages to understand intent and flag mismatches between commit intent and code changes.",
     "Keep detail and recommendation concise so each finding can be posted as a short inline review comment.",
     "If previousOutputsParsed is present, use it as the authoritative previous-stage context to avoid escaped JSON artifacts.",
     "Do not wrap the JSON in Markdown fences."
@@ -30240,6 +30251,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 var execFileAsync = promisify(execFile);
+var COMMIT_FIELD_SEPARATOR = "";
+var COMMIT_RECORD_SEPARATOR = "";
+var DEFAULT_MAX_COMMIT_MESSAGES = 20;
+var DEFAULT_MAX_COMMIT_MESSAGE_CHARS = 400;
 function splitStatusLine(line) {
   const parts = line.split("	");
   const status = parts[0] ?? "M";
@@ -30295,6 +30310,49 @@ async function runGit(repositoryRoot, args) {
     maxBuffer: 10 * 1024 * 1024
   });
   return stdout.toString().trim();
+}
+function truncateCommitMessage(value, maxChars) {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars)}... [truncated ${value.length - maxChars} characters]`;
+}
+function parseCommitMessages(logOutput, maxMessages = DEFAULT_MAX_COMMIT_MESSAGES) {
+  const records = logOutput.split(COMMIT_RECORD_SEPARATOR).map((record) => record.trim()).filter(Boolean);
+  const messages = [];
+  for (const record of records) {
+    const [hashRaw = "", subjectRaw = "", bodyRaw = ""] = record.split(
+      COMMIT_FIELD_SEPARATOR
+    );
+    const hash = hashRaw.trim();
+    const subject = subjectRaw.trim();
+    const body = bodyRaw.trim();
+    const messageCore = [subject, body].filter(Boolean).join("\n\n").trim();
+    if (!messageCore) {
+      continue;
+    }
+    const shortHash = hash ? hash.slice(0, 12) : void 0;
+    const normalizedMessage = messageCore.replace(/\n{3,}/g, "\n\n");
+    const truncatedMessage = truncateCommitMessage(
+      normalizedMessage,
+      DEFAULT_MAX_COMMIT_MESSAGE_CHARS
+    );
+    messages.push(
+      shortHash ? `${shortHash} ${truncatedMessage}` : truncatedMessage
+    );
+    if (messages.length >= maxMessages) {
+      break;
+    }
+  }
+  return messages;
+}
+async function collectCommitMessages(repositoryRoot, range, maxMessages = DEFAULT_MAX_COMMIT_MESSAGES) {
+  const logOutput = await runGit(repositoryRoot, [
+    "log",
+    `--format=%H${COMMIT_FIELD_SEPARATOR}%s${COMMIT_FIELD_SEPARATOR}%b${COMMIT_RECORD_SEPARATOR}`,
+    `${range.baseRef}..${range.headRef}`
+  ]);
+  return parseCommitMessages(logOutput, maxMessages);
 }
 function buildMatcher(patterns) {
   if (!patterns || patterns.length === 0) {
@@ -30408,12 +30466,22 @@ async function collectReviewFiles(options) {
   return files;
 }
 async function collectReviewContext(repositoryRoot, context2) {
+  const range = await resolveGitRange(repositoryRoot, context2, "HEAD");
+  let commitMessages = context2.commitMessages ?? [];
+  if (commitMessages.length === 0) {
+    try {
+      commitMessages = await collectCommitMessages(repositoryRoot, range);
+    } catch {
+      commitMessages = [];
+    }
+  }
   const repositoryName = context2.repositoryName ?? process.env.GITHUB_REPOSITORY ?? path.basename(repositoryRoot);
   return {
     repositoryName,
     metadata: context2.metadata,
-    baseRef: context2.baseRef,
-    headRef: context2.headRef
+    baseRef: range.baseRef,
+    headRef: range.headRef,
+    commitMessages
   };
 }
 

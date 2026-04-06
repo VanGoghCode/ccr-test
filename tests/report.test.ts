@@ -44,6 +44,10 @@ describe("report rendering", () => {
         context: {
           repositoryName: "demo/repo",
           metadata: "sandbox",
+          commitMessages: [
+            "123456789abc feat: add cache layer",
+            "abcdef123456 fix: avoid nil pointer in parser",
+          ],
         },
       },
       modelOutput: {
@@ -76,5 +80,7 @@ describe("report rendering", () => {
     expect(report.markdown).toContain("demo/repo");
     expect(report.markdown).toContain("single-pass");
     expect(report.markdown).toContain("One file reviewed.");
+    expect(report.markdown).toContain("Commits in range: 2");
+    expect(report.markdown).toContain("feat: add cache layer");
   });
 });

@@ -21,6 +21,11 @@ export interface CollectReviewFilesOptions {
   repositoryName?: string;
 }
 
+const COMMIT_FIELD_SEPARATOR = "\u001f";
+const COMMIT_RECORD_SEPARATOR = "\u001e";
+const DEFAULT_MAX_COMMIT_MESSAGES = 20;
+const DEFAULT_MAX_COMMIT_MESSAGE_CHARS = 400;
+
 function splitStatusLine(line: string): {
   status: string;
   path: string;
@@ -84,6 +89,69 @@ async function runGit(repositoryRoot: string, args: string[]): Promise<string> {
     maxBuffer: 10 * 1024 * 1024,
   });
   return stdout.toString().trim();
+}
+
+function truncateCommitMessage(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}... [truncated ${value.length - maxChars} characters]`;
+}
+
+export function parseCommitMessages(
+  logOutput: string,
+  maxMessages = DEFAULT_MAX_COMMIT_MESSAGES,
+): string[] {
+  const records = logOutput
+    .split(COMMIT_RECORD_SEPARATOR)
+    .map((record) => record.trim())
+    .filter(Boolean);
+
+  const messages: string[] = [];
+  for (const record of records) {
+    const [hashRaw = "", subjectRaw = "", bodyRaw = ""] = record.split(
+      COMMIT_FIELD_SEPARATOR,
+    );
+    const hash = hashRaw.trim();
+    const subject = subjectRaw.trim();
+    const body = bodyRaw.trim();
+    const messageCore = [subject, body].filter(Boolean).join("\n\n").trim();
+
+    if (!messageCore) {
+      continue;
+    }
+
+    const shortHash = hash ? hash.slice(0, 12) : undefined;
+    const normalizedMessage = messageCore.replace(/\n{3,}/g, "\n\n");
+    const truncatedMessage = truncateCommitMessage(
+      normalizedMessage,
+      DEFAULT_MAX_COMMIT_MESSAGE_CHARS,
+    );
+    messages.push(
+      shortHash ? `${shortHash} ${truncatedMessage}` : truncatedMessage,
+    );
+
+    if (messages.length >= maxMessages) {
+      break;
+    }
+  }
+
+  return messages;
+}
+
+export async function collectCommitMessages(
+  repositoryRoot: string,
+  range: GitRange,
+  maxMessages = DEFAULT_MAX_COMMIT_MESSAGES,
+): Promise<string[]> {
+  const logOutput = await runGit(repositoryRoot, [
+    "log",
+    `--format=%H${COMMIT_FIELD_SEPARATOR}%s${COMMIT_FIELD_SEPARATOR}%b${COMMIT_RECORD_SEPARATOR}`,
+    `${range.baseRef}..${range.headRef}`,
+  ]);
+
+  return parseCommitMessages(logOutput, maxMessages);
 }
 
 function buildMatcher(
@@ -248,14 +316,26 @@ export async function collectReviewContext(
   repositoryRoot: string,
   context: ReviewContext,
 ): Promise<ReviewContext> {
+  const range = await resolveGitRange(repositoryRoot, context, "HEAD");
+  let commitMessages: string[] = context.commitMessages ?? [];
+  if (commitMessages.length === 0) {
+    try {
+      commitMessages = await collectCommitMessages(repositoryRoot, range);
+    } catch {
+      commitMessages = [];
+    }
+  }
+
   const repositoryName =
     context.repositoryName ??
     process.env.GITHUB_REPOSITORY ??
     path.basename(repositoryRoot);
+
   return {
     repositoryName,
     metadata: context.metadata,
-    baseRef: context.baseRef,
-    headRef: context.headRef,
+    baseRef: range.baseRef,
+    headRef: range.headRef,
+    commitMessages,
   };
 }

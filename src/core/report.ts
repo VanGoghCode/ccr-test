@@ -126,7 +126,18 @@ export function renderReviewMarkdown(params: {
     request.context?.headRef
       ? `- Head ref: ${request.context.headRef}`
       : undefined,
+    request.context?.commitMessages?.length
+      ? `- Commits in range: ${request.context.commitMessages.length}`
+      : undefined,
   ].filter((line): line is string => Boolean(line));
+
+  const commitMessages = request.context?.commitMessages ?? [];
+  const commitMessageList =
+    commitMessages.length > 0
+      ? commitMessages
+          .map((message) => `- ${markdownEscape(message)}`)
+          .join("\n")
+      : "- None";
 
   const fileInventory = request.files
     .map((file) => {
@@ -165,6 +176,9 @@ export function renderReviewMarkdown(params: {
     "",
     "### Review Context",
     ...contextLines,
+    "",
+    "### Commit Messages",
+    commitMessageList,
     "",
     "### Files in Scope",
     fileInventory || "- None",

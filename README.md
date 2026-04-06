@@ -7,7 +7,7 @@ The repository also includes a local sandbox UI so you can test the action logic
 ## What It Does
 
 - Collects changed files from a PR or explicit git range.
-- Feeds changed file content and git context into a shared review engine.
+- Feeds changed file content, git range context, and commit messages into a shared review engine.
 - Runs one of three architectures:
   - `single-pass`: one review call over the entire change set.
   - `iterative`: six shared sequential stages that refine the previous stage output.

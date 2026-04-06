@@ -23,6 +23,7 @@ export interface ReviewContext {
   metadata?: string;
   baseRef?: string;
   headRef?: string;
+  commitMessages?: string[];
 }
 
 export interface ReviewRequest {

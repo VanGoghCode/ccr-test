@@ -62,12 +62,16 @@ function buildRequestEnvelope(
     Math.floor(maxContextChars / Math.max(request.files.length * 2, 1)),
   );
   const previousOutputBudget = Math.max(500, Math.floor(maxContextChars / 4));
+  const commitMessageBudget = Math.max(120, Math.floor(maxContextChars / 10));
   const reviewContext = request.context
     ? {
         ...request.context,
         metadata: request.context.metadata
           ? truncateText(request.context.metadata, previousOutputBudget)
           : undefined,
+        commitMessages: request.context.commitMessages?.map((message) =>
+          truncateText(message, commitMessageBudget),
+        ),
       }
     : undefined;
 
@@ -114,6 +118,7 @@ function buildSystemMessage(
     "Risk level must be one of low, medium, or high.",
     "Findings should be an array of objects with severity, title, detail, optional file, optional line, optional endLine, and optional recommendation or suggestion fields.",
     "When a finding maps to a changed file, set file and line to the changed-line anchor in the head revision.",
+    "Use reviewContext.commitMessages to understand intent and flag mismatches between commit intent and code changes.",
     "Keep detail and recommendation concise so each finding can be posted as a short inline review comment.",
     "If previousOutputsParsed is present, use it as the authoritative previous-stage context to avoid escaped JSON artifacts.",
     "Do not wrap the JSON in Markdown fences.",
