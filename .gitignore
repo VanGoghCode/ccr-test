@@ -1,0 +1,26 @@
+node_modules/
+sandbox/dist/
+coverage/
+.vite/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+.DS_Store
+
+# Sensitive files
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+*.csr
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets/

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npx kill-port:*)",
+      "Bash(npx vitest:*)"
+    ]
+  }
+}

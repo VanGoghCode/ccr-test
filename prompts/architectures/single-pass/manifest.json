@@ -1,0 +1,14 @@
+{
+  "id": "single-pass",
+  "label": "Single Prompt",
+  "description": "One end-to-end review call over the full change set.",
+  "mode": "single",
+  "stages": [
+    {
+      "id": "review",
+      "label": "Review",
+      "purpose": "Perform one complete code review over the supplied files and context.",
+      "promptPath": "architectures/single-pass/prompt.md"
+    }
+  ]
+}

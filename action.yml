@@ -1,0 +1,73 @@
+name: CCR Review
+description: Review PR changes with configurable prompt architectures and write CCR.md.
+author: GitHub Copilot
+inputs:
+  api-key:
+    description: API key for the OpenAI-compatible review provider.
+    required: true
+  base-url:
+    description: Base URL for the OpenAI-compatible chat completions endpoint.
+    required: false
+    default: https://api.openai.com/v1
+  model:
+    description: Model name to use for the review.
+    required: true
+  architecture:
+    description: Prompt architecture to run.
+    required: false
+    default: single-pass
+  prompt-root:
+    description: Directory that contains the architecture manifests and prompt files.
+    required: false
+    default: prompts
+  output-path:
+    description: Path where CCR.md should be written.
+    required: false
+    default: CCR.md
+  base-ref:
+    description: Base git ref or commit to diff against.
+    required: false
+  head-ref:
+    description: Head git ref or commit to review.
+    required: false
+  include-globs:
+    description: Comma-separated list of glob patterns to include.
+    required: false
+    default: "**/*"
+  exclude-globs:
+    description: Comma-separated list of glob patterns to exclude.
+    required: false
+    default: "node_modules/**,dist/**,coverage/**,.git/**"
+  max-files:
+    description: Maximum number of changed files to include in the review payload.
+    required: false
+    default: "25"
+  max-context-chars:
+    description: Maximum number of characters to include across file context payloads.
+    required: false
+    default: "12000"
+  temperature:
+    description: Sampling temperature for the review model.
+    required: false
+    default: "0.2"
+  request-timeout-ms:
+    description: Timeout for the model request in milliseconds.
+    required: false
+    default: "120000"
+outputs:
+  report-path:
+    description: Absolute or workspace-relative path to the generated CCR.md file.
+  summary:
+    description: Concise summary extracted from the review output.
+  risk-level:
+    description: Overall risk level returned by the review.
+  finding-count:
+    description: Number of review findings in the final report.
+  architecture:
+    description: The architecture that ran for the review.
+runs:
+  using: node20
+  main: dist/index.js
+branding:
+  icon: search
+  color: blue

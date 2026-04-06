@@ -1,0 +1,50 @@
+{
+  "id": "parallel",
+  "label": "Parallel Ensemble",
+  "description": "Independent review prompts run in parallel and are merged by a final combiner prompt.",
+  "mode": "parallel",
+  "stages": [
+    {
+      "id": "stage-1",
+      "label": "Stage 1",
+      "purpose": "Find correctness risks in the supplied change set.",
+      "promptPath": "shared/stages/stage-1.md"
+    },
+    {
+      "id": "stage-2",
+      "label": "Stage 2",
+      "purpose": "Review test coverage and regression risk.",
+      "promptPath": "shared/stages/stage-2.md"
+    },
+    {
+      "id": "stage-3",
+      "label": "Stage 3",
+      "purpose": "Review security and safety concerns.",
+      "promptPath": "shared/stages/stage-3.md"
+    },
+    {
+      "id": "stage-4",
+      "label": "Stage 4",
+      "purpose": "Review performance, scale, and resource usage concerns.",
+      "promptPath": "shared/stages/stage-4.md"
+    },
+    {
+      "id": "stage-5",
+      "label": "Stage 5",
+      "purpose": "Review maintainability, design, and developer experience concerns.",
+      "promptPath": "shared/stages/stage-5.md"
+    },
+    {
+      "id": "stage-6",
+      "label": "Stage 6",
+      "purpose": "Synthesize the review into the final CCR.md output.",
+      "promptPath": "shared/stages/stage-6.md"
+    }
+  ],
+  "combineStage": {
+    "id": "combine",
+    "label": "Combine",
+    "purpose": "Merge the parallel analyses into a single CCR.md report.",
+    "promptPath": "architectures/parallel/combine.md"
+  }
+}

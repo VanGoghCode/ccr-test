@@ -1,0 +1,47 @@
+{
+  "name": "ccr-action",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable GitHub Action for PR review reports with a local prompt playground.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build:action && npm run build:sandbox",
+    "build:action": "node scripts/build-action.mjs",
+    "build:sandbox": "vite build --config sandbox/vite.config.ts",
+    "dev": "concurrently -k -n API,WEB -c cyan,magenta \"tsx watch src/server.ts\" \"vite --config sandbox/vite.config.ts\"",
+    "dev:api": "tsx watch src/server.ts",
+    "dev:web": "vite --config sandbox/vite.config.ts",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.1",
+    "dotenv": "^17.4.0",
+    "express": "^4.21.2",
+    "picomatch": "^4.0.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "esbuild": "^0.24.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}
