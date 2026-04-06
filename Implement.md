@@ -189,7 +189,7 @@ def query_websocket(query_id):
     payload = {
         "action": "query",
         "model_name": "gpt4o",
-        "model_provider": "openai",
+        "model_provider": "asu",
         "query": "Hey, what is the file's name?",
         "chat_upload": {
             "images": [],
@@ -459,44 +459,44 @@ Execute a query with specific parameters.
 | `geminiflash1_5-8b` | gcp-deepmind | No | query, vision, audio |
 | `imagen3` | gcp-deepmind | Yes | image |
 | `nano_banana_pro` | gcp-deepmind | Yes | image |
-| `gpt3_5` | openai | Yes | query |
-| `gpt3_5-16k` | openai | Yes | query |
-| `gpt4` | openai | Yes | query |
-| `gpt4-32k` | openai | No | query |
-| `gpt4turbo` | openai | Yes | query |
-| `gpt4o` | openai | Yes | query, vision |
-| `gpt5` | openai | Yes | query, vision |
-| `gpt5_chat` | openai | Yes | query, vision |
-| `gpt5_mini` | openai | Yes | query, vision |
-| `gpt5_nano` | openai | Yes | query, vision |
-| `gpt5_1` | openai | Yes | query, vision |
-| `gpt5_1_instant` | openai | Yes | query, vision |
-| `gpt5_1_thinking` | openai | Yes | query, vision |
-| `gpt5_2` | openai | Yes | query, vision |
-| `gpt5_2_pro` | openai | Yes | query, vision |
-| `gpt5_3_instant` | openai | Yes | query, vision |
-| `gpt5_4_pro` | openai | Yes | query, vision |
-| `gpt5_4_thinking` | openai | Yes | query, vision |
-| `gpt4_1` | openai | Yes | query, vision |
-| `gpt4_1-mini` | openai | Yes | query, vision |
-| `gpt4_1-nano` | openai | Yes | query, vision |
-| `gpt4o_realtime` | openai | Yes | realtime |
-| `gpt4o_mini_realtime` | openai | Yes | realtime |
-| `gpt4o_mini` | openai | Yes | query, vision |
-| `o1-mini` | openai | No | query |
-| `o3-mini` | openai | Yes | query |
-| `o3-mini-high` | openai | Yes | query |
-| `o4-mini-high` | openai | Yes | query, vision |
-| `o4-mini` | openai | Yes | query, vision |
-| `o3` | openai | Yes | query, vision |
-| `o1` | openai | Yes | query, vision |
-| `tts1` | openai | Yes | speech |
-| `tts1hd` | openai | Yes | speech |
-| `gpt4o_mini-tts` | openai | Yes | speech |
-| `dalle3` | openai | Yes | image |
-| `whisper-1` | openai | Yes | audio |
-| `gpt4o-transcribe` | openai | Yes | audio |
-| `gpt4o_mini-transcribe`| openai | Yes | audio |
+| `gpt3_5` | asu | Yes | query |
+| `gpt3_5-16k` | asu | Yes | query |
+| `gpt4` | asu | Yes | query |
+| `gpt4-32k` | asu | No | query |
+| `gpt4turbo` | asu | Yes | query |
+| `gpt4o` | asu | Yes | query, vision |
+| `gpt5` | asu | Yes | query, vision |
+| `gpt5_chat` | asu | Yes | query, vision |
+| `gpt5_mini` | asu | Yes | query, vision |
+| `gpt5_nano` | asu | Yes | query, vision |
+| `gpt5_1` | asu | Yes | query, vision |
+| `gpt5_1_instant` | asu | Yes | query, vision |
+| `gpt5_1_thinking` | asu | Yes | query, vision |
+| `gpt5_2` | asu | Yes | query, vision |
+| `gpt5_2_pro` | asu | Yes | query, vision |
+| `gpt5_3_instant` | asu | Yes | query, vision |
+| `gpt5_4_pro` | asu | Yes | query, vision |
+| `gpt5_4_thinking` | asu | Yes | query, vision |
+| `gpt4_1` | asu | Yes | query, vision |
+| `gpt4_1-mini` | asu | Yes | query, vision |
+| `gpt4_1-nano` | asu | Yes | query, vision |
+| `gpt4o_realtime` | asu | Yes | realtime |
+| `gpt4o_mini_realtime` | asu | Yes | realtime |
+| `gpt4o_mini` | asu | Yes | query, vision |
+| `o1-mini` | asu | No | query |
+| `o3-mini` | asu | Yes | query |
+| `o3-mini-high` | asu | Yes | query |
+| `o4-mini-high` | asu | Yes | query, vision |
+| `o4-mini` | asu | Yes | query, vision |
+| `o3` | asu | Yes | query, vision |
+| `o1` | asu | Yes | query, vision |
+| `tts1` | asu | Yes | speech |
+| `tts1hd` | asu | Yes | speech |
+| `gpt4o_mini-tts` | asu | Yes | speech |
+| `dalle3` | asu | Yes | image |
+| `whisper-1` | asu | Yes | audio |
+| `gpt4o-transcribe` | asu | Yes | audio |
+| `gpt4o_mini-transcribe`| asu | Yes | audio |
 | `j2mid` | aws | No | query |
 | `j2ultra` | aws | No | query |
 | `llama3-8b` | aws | Yes | query |
@@ -557,7 +557,7 @@ Execute a query with specific parameters.
   "endpoint": "audio",
   "query": "What is this audio?",
   "audio_file": "Base64_encoded_audio_data",
-  "model_provider": "openai",
+  "model_provider": "asu",
   "model_name": "whisper-1",
   "model_params": {
     "translation": true,
@@ -582,7 +582,7 @@ Afrikaans (af), Arabic (ar), Armenian (hy), Azerbaijani (az), Belarusian (be), B
   "endpoint": "vision",
   "query": "What is in this image?",
   "image_file": "Base64_encoded_image_data",
-  "model_provider": "openai",
+  "model_provider": "asu",
   "model_name": "gpt4o",
   "response_format": {
     "type": "json"
@@ -598,7 +598,7 @@ Afrikaans (af), Arabic (ar), Armenian (hy), Azerbaijani (az), Belarusian (be), B
   "endpoint": "speech",
   "query": "Say Hello in French.",
   "voice": "alloy",
-  "model_provider": "openai",
+  "model_provider": "asu",
   "model_name": "tts1"
 }
 ```
@@ -610,7 +610,7 @@ Afrikaans (af), Arabic (ar), Armenian (hy), Azerbaijani (az), Belarusian (be), B
   "action": "query",
   "endpoint": "image",
   "query": "Generate image of an ice cream",
-  "model_provider": "openai",
+  "model_provider": "asu",
   "model_name": "dalle3"
 }
 ```
@@ -634,7 +634,7 @@ Afrikaans (af), Arabic (ar), Armenian (hy), Azerbaijani (az), Belarusian (be), B
 ```json
 {
   "query": "Hi what is your name?",
-  "embeddings_provider": "openai",
+  "embeddings_provider": "asu",
   "embeddings_model": "ada",
   "dimensions": 1356,
   "normalize": true
@@ -643,16 +643,16 @@ Afrikaans (af), Arabic (ar), Armenian (hy), Azerbaijani (az), Belarusian (be), B
 
 **Parameters:**
 * **`query`** (string): Your query for getting the embeddings.
-* **`embeddings_provider`** (string): Options include `"openai"`, `"aws"`, `"azure"`, `"gcp"`. Specifies the provider for the embeddings.
+* **`embeddings_provider`** (string): Options include `"asu"`, `"aws"`, `"azure"`, `"gcp"`. Specifies the provider for the embeddings.
 * **`embeddings_model`** (string): The corresponding model for the selected provider.
 * **`dimensions`** (int, default is `1024`): For example, 256, 512, or 1024 (only applicable for the titan2 model).
 * **`normalize`** (boolean, default is `false`): Whether to normalize the embeddings (only applicable for the titan2 model).
 
 ### Supported Models
 The following models are supported across different providers:
-* `model_provider = openai`, `model_name = te3l`
-* `model_provider = openai`, `model_name = ada`
-* `model_provider = openai`, `model_name = te3s`
+* `model_provider = asu`, `model_name = te3l`
+* `model_provider = asu`, `model_name = ada`
+* `model_provider = asu`, `model_name = te3s`
 * `model_provider = aws`, `model_name = titan`
 * `model_provider = aws`, `model_name = titan2`
 * `model_provider = aws`, `model_name = ce-english`
@@ -677,7 +677,7 @@ This endpoint shows how your document will be chunked and tokenized. It supports
     "chunk_size": 256
   },
   "tokenizer_params": {
-    "tokenizer_provider": "openai",
+    "tokenizer_provider": "asu",
     "tokenizer_name": "gpt2"
   }
 }
@@ -691,7 +691,7 @@ This endpoint shows how your document will be chunked and tokenized. It supports
     * **`chunk_strategy`** (string): Options are `"character"`, `"words"`, or `"sentence"`. Defines the strategy used for chunking.
     * **`chunk_size`** (int): The size of each chunk (e.g., 256 characters, words, or sentence tokens).
 * **`tokenizer_params`** (object): Defines the tokenizer configuration.
-    * **`tokenizer_provider`** (string): The provider for tokenization (e.g., `"openai"`).
+    * **`tokenizer_provider`** (string): The provider for tokenization (e.g., `"asu"`).
     * **`tokenizer_name`** (string): The specific tokenizer model to use (e.g., `"gpt2"`).
 
 ---

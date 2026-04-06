@@ -7,14 +7,14 @@ The repository also includes a local sandbox UI so you can test the action logic
 ## What It Does
 
 - Collects changed files from a PR or explicit git range.
-- Feeds the file content and optional metadata into a shared review engine.
+- Feeds changed file content and git context into a shared review engine.
 - Runs one of three architectures:
   - `single-pass`: one review call over the entire change set.
   - `iterative`: six shared sequential stages that refine the previous stage output.
   - `parallel`: the same six shared stages in parallel followed by a combine stage.
 - Writes the final markdown report to `CCR.md` or a path you choose.
 - Optionally posts short inline pull request review comments on mapped changed lines.
-- Exposes outputs for the report path, summary, risk level, finding count, and architecture ID.
+- Exposes outputs for report path, summary, risk level, finding count, architecture ID, and inline comment counts.
 
 Prompt files are part of this repository and are bundled with each action release tag.
 
@@ -41,9 +41,10 @@ The action reads these prompts from the bundled action path in GitHub Actions, s
 
 | Input | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `api-key` | Yes | - | API key for the OpenAI-compatible review provider. |
-| `base-url` | No | `https://api.openai.com/v1` | Base URL for the chat completions endpoint. |
-| `model` | Yes | - | Model name to use for the review. |
+| `api-key` | Yes | - | API key for the ASU AIML review provider. |
+| `base-url` | No | `https://api-main.aiml.asu.edu/queryV2` | Base URL for the ASU AIML query endpoint. |
+| `model-provider` | No | - | Optional ASU model provider identifier included in query requests. |
+| `model` | Yes | - | ASU model name to use for the review. |
 | `github-token` | No | - | GitHub token used to publish inline PR comments when enabled. |
 | `post-inline-comments` | No | `false` | Whether to publish short inline comments on changed lines in pull requests. |
 | `inline-comment-limit` | No | `10` | Maximum number of inline comments posted per run. |
@@ -116,9 +117,10 @@ jobs:
       - name: Run CCR review
         uses: your-org/your-repo@v1
         with:
-          api-key: ${{ secrets.CREATEAI_API_KEY }}
+          api-key: ${{ secrets.ASU_API_KEY }}
           github-token: ${{ github.token }}
-          base-url: https://platform.aiml.asu.edu/api
+          base-url: https://api-main.aiml.asu.edu/queryV2
+          model-provider: provider-id
           model: gpt5_2
           architecture: parallel
           post-inline-comments: "true"
@@ -138,7 +140,7 @@ jobs:
 
 1. Add the workflow shown above at `.github/workflows/ccr-review.yml`.
 2. Set `uses` to the published action tag, for example `your-org/your-repo@v1`.
-3. Add a repository secret named `CREATEAI_API_KEY`.
+3. Add a repository secret named `ASU_API_KEY`.
 4. Open a PR and verify `CCR.md` is generated in the workflow artifact.
 
 ## Common Customizations
@@ -147,7 +149,8 @@ Change these `with` inputs in the workflow:
 
 - `architecture`: `single-pass` | `iterative` | `parallel`
 - `model`: set your preferred model name
-- `base-url`: set your OpenAI-compatible endpoint
+- `base-url`: set your ASU AIML endpoint
+- `model-provider`: set your ASU provider identifier when required
 - `post-inline-comments`: `true` to publish short line-level PR comments
 - `inline-comment-limit`: cap inline comments per run
 - `output-path`: change review report output file
@@ -184,24 +187,19 @@ npm ci
 npm run dev
 ```
 
-The sandbox defaults to the mock provider. To exercise the official ASU CreateAI OpenAI-compatible endpoint, set:
+The sandbox backend supports ASU provider mode. Set:
 
 ```bash
-set ASU_PROVIDER=openai
+set CCR_PROVIDER=asu
 set ASU_API_KEY=...
-set ASU_MODEL=...
+set ASU_MODEL=gpt5_2
 set ASU_BASE_URL=https://api-main.aiml.asu.edu/queryV2
+set ASU_MODEL_PROVIDER=provider-id
 ```
 
-For the CreateAI API model, use `ASU_MODEL=gpt5_2`.
+If your ASU tenant does not require an explicit model provider, omit `ASU_MODEL_PROVIDER`.
 
 The sandbox UI is at http://127.0.0.1:5173 and the backend API is on http://127.0.0.1:3030.
-
-If you want to test the published action in a workflow, add these inputs in the workflow file and store the API key as a repository secret:
-
-- Go to Repository settings, then Secrets and variables, then Actions.
-- Add a secret such as CREATEAI_API_KEY.
-- In the workflow, pass api-key: ${{ secrets.CREATEAI_API_KEY }}, base-url: https://platform.aiml.asu.edu/api, and model: gpt5_2.
 
 If you move the prompt folder, set prompt-root in the action inputs to the new folder name or absolute path. The default prompt-root already points at the action’s bundled prompts.
 
@@ -223,6 +221,6 @@ npm run typecheck
 
 ## Notes
 
-- The action always writes `CCR.md`. Inline PR comments are optional and require `post-inline-comments: "true"` plus `pull-requests: write` permission.
+- The action always writes a markdown report (default `CCR.md`, configurable via `output-path`). Inline PR comments are optional and require `post-inline-comments: "true"` plus `pull-requests: write` permission.
 - Update prompts in this repository and release a new tag when you want all repositories using this action to get new review behavior.
 - The sandbox and the action share the same engine so local tests mirror the publishable behavior.

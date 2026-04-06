@@ -25642,16 +25642,21 @@ var import_github = __toESM(require_github(), 1);
 import path4 from "node:path";
 
 // src/core/api.ts
-var DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-var DEFAULT_OPENAI_TEMPERATURE = 0.2;
-var DEFAULT_OPENAI_TIMEOUT_MS = 12e4;
-function createOpenAiCompatibleProviderConfig(input) {
+var DEFAULT_ASU_BASE_URL = "https://api-main.aiml.asu.edu/queryV2";
+var DEFAULT_ASU_TEMPERATURE = 0.2;
+var DEFAULT_ASU_TIMEOUT_MS = 12e4;
+function normalizeOptionalString(value) {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : void 0;
+}
+function createAsuAimlProviderConfig(input) {
   return {
     apiKey: input.apiKey.trim(),
-    baseUrl: input.baseUrl?.trim() || DEFAULT_OPENAI_BASE_URL,
+    baseUrl: input.baseUrl?.trim() || DEFAULT_ASU_BASE_URL,
+    modelProvider: normalizeOptionalString(input.modelProvider),
     model: input.model.trim(),
-    temperature: input.temperature ?? DEFAULT_OPENAI_TEMPERATURE,
-    timeoutMs: input.timeoutMs ?? DEFAULT_OPENAI_TIMEOUT_MS
+    temperature: input.temperature ?? DEFAULT_ASU_TEMPERATURE,
+    timeoutMs: input.timeoutMs ?? DEFAULT_ASU_TIMEOUT_MS
   };
 }
 
@@ -30761,74 +30766,101 @@ ${finding.detail}`,
 }
 
 // src/core/llm.ts
-function toCompletionUrl(baseUrl) {
-  return new URL(
-    "chat/completions",
-    baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
-  ).toString();
-}
-function buildRequestBody(config, messages) {
-  return {
-    model: config.model,
-    temperature: config.temperature,
-    messages
-  };
-}
 function toFiniteNumber(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return void 0;
   }
   return value;
 }
-function parseChatCompletionContent(rawBody) {
-  const parsed = JSON.parse(rawBody);
-  const content = parsed.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error(
-      "Model response did not include a chat completion payload."
-    );
+function convertMessagesToAsuFormat(messages) {
+  const systemParts = messages.filter((m) => m.role === "system").map((m) => m.content);
+  const userMessages = messages.filter((m) => m.role === "user");
+  const lastUserMessage = userMessages[userMessages.length - 1];
+  if (!lastUserMessage) {
+    throw new Error("No user message found in provider input.");
   }
   return {
-    output: content,
-    usage: {
-      promptTokens: toFiniteNumber(parsed.usage?.prompt_tokens),
-      completionTokens: toFiniteNumber(parsed.usage?.completion_tokens),
-      totalTokens: toFiniteNumber(parsed.usage?.total_tokens)
-    }
+    systemPrompt: systemParts.join("\n\n"),
+    query: lastUserMessage.content
   };
 }
-async function requestOpenAiCompatibleChatCompletion(config, messages) {
+function parseAsuAimlResponse(rawBody) {
+  const parsed = JSON.parse(rawBody);
+  const usageCandidate = parsed.usage ?? parsed.metrics;
+  const usage = usageCandidate ? {
+    promptTokens: toFiniteNumber(
+      usageCandidate.prompt_tokens ?? usageCandidate.input_tokens
+    ),
+    completionTokens: toFiniteNumber(
+      usageCandidate.completion_tokens ?? usageCandidate.output_tokens
+    ),
+    totalTokens: toFiniteNumber(usageCandidate.total_tokens)
+  } : void 0;
+  const withResult = (output) => ({
+    output,
+    usage
+  });
+  if (typeof parsed.response === "string") return withResult(parsed.response);
+  if (typeof parsed.output === "string") return withResult(parsed.output);
+  if (typeof parsed.result === "string") return withResult(parsed.result);
+  if (typeof parsed.content === "string") return withResult(parsed.content);
+  const choices = parsed.choices;
+  if (choices?.[0]?.message?.content) {
+    return withResult(choices[0].message.content);
+  }
+  const resp = parsed.response;
+  if (resp && typeof resp === "object") {
+    if (typeof resp.content === "string") return withResult(resp.content);
+    if (typeof resp.text === "string") return withResult(resp.text);
+    if (typeof resp.message === "string") return withResult(resp.message);
+  }
+  throw new Error(
+    `Unexpected ASU AIML response format: ${rawBody.slice(0, 500)}`
+  );
+}
+async function requestAsuAimlChatCompletion(config, messages) {
+  const { systemPrompt, query } = convertMessagesToAsuFormat(messages);
+  const body = {
+    action: "query",
+    request_source: "override_params",
+    query,
+    model_name: config.model,
+    model_params: {
+      temperature: config.temperature,
+      ...systemPrompt.length > 0 ? { system_prompt: systemPrompt } : {}
+    }
+  };
+  if (config.modelProvider && config.modelProvider.trim().length > 0) {
+    body.model_provider = config.modelProvider;
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
-    const response = await fetch(toCompletionUrl(config.baseUrl), {
+    const response = await fetch(config.baseUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(buildRequestBody(config, messages)),
+      body: JSON.stringify(body),
       signal: controller.signal
     });
     const rawBody = await response.text();
     if (!response.ok) {
       throw new Error(
-        `Model request failed with status ${response.status}: ${rawBody}`
+        `ASU AIML request failed with status ${response.status}: ${rawBody}`
       );
     }
-    return parseChatCompletionContent(rawBody);
+    return parseAsuAimlResponse(rawBody);
   } finally {
     clearTimeout(timeout);
   }
 }
-function createOpenAiCompatibleProvider(config) {
+function createAsuAimlProvider(config) {
   return {
     async review(input) {
       try {
-        return await requestOpenAiCompatibleChatCompletion(
-          config,
-          input.messages
-        );
+        return await requestAsuAimlChatCompletion(config, input.messages);
       } catch (error2) {
         const message = error2 instanceof Error ? error2.message : String(error2);
         throw new Error(`Unable to complete the review request: ${message}`);
@@ -31024,14 +31056,16 @@ function getPullRequestHeadSha() {
 }
 function buildProvider() {
   const apiKey = core.getInput("api-key", { required: true });
-  const baseUrl = core.getInput("base-url") || "https://api.openai.com/v1";
+  const baseUrl = core.getInput("base-url") || DEFAULT_ASU_BASE_URL;
+  const modelProvider = readOptionalInput("model-provider");
   const model = core.getInput("model", { required: true });
   const temperature = readFloatInput("temperature", 0.2);
   const timeoutMs = readIntegerInput("request-timeout-ms", 12e4);
-  return createOpenAiCompatibleProvider(
-    createOpenAiCompatibleProviderConfig({
+  return createAsuAimlProvider(
+    createAsuAimlProviderConfig({
       apiKey,
       baseUrl,
+      modelProvider,
       model,
       temperature,
       timeoutMs

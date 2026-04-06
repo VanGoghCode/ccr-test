@@ -2,15 +2,9 @@ import "dotenv/config";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import express from "express";
-import {
-  readAsuAimlProviderConfig,
-  readOpenAiCompatibleProviderConfig,
-} from "./core/api.js";
+import { readAsuAimlProviderConfig } from "./core/api.js";
 import { runReviewArchitecture } from "./core/engine.js";
-import {
-  createAsuAimlProvider,
-  createOpenAiCompatibleProvider,
-} from "./core/llm.js";
+import { createAsuAimlProvider } from "./core/llm.js";
 import { createLogger } from "./core/logging.js";
 import {
   applyPromptOverrides,
@@ -25,20 +19,14 @@ const promptRoot = process.env.PROMPT_ROOT || "prompts";
 const port = Number.parseInt(process.env.PORT || "3030", 10);
 
 function createProvider(): ReviewProvider {
-  const providerMode =
-    process.env.CCR_PROVIDER ?? (process.env.ASU_API_KEY ? "asu" : "openai");
-
-  if (providerMode === "asu") {
-    return createAsuAimlProvider(readAsuAimlProviderConfig());
+  const providerMode = process.env.CCR_PROVIDER?.trim().toLowerCase() || "asu";
+  if (providerMode !== "asu") {
+    throw new Error(
+      "Only ASU provider mode is supported. Set CCR_PROVIDER=asu.",
+    );
   }
 
-  if (providerMode === "openai") {
-    return createOpenAiCompatibleProvider(readOpenAiCompatibleProviderConfig());
-  }
-
-  throw new Error(
-    "No API provider configured. Set ASU_API_KEY + ASU_MODEL or OPENAI_API_KEY + OPENAI_MODEL.",
-  );
+  return createAsuAimlProvider(readAsuAimlProviderConfig());
 }
 
 function readPromptOverrides(

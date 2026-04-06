@@ -1,7 +1,10 @@
 import path from "node:path";
 import * as core from "@actions/core";
 import { context } from "@actions/github";
-import { createOpenAiCompatibleProviderConfig } from "./core/api.js";
+import {
+  DEFAULT_ASU_BASE_URL,
+  createAsuAimlProviderConfig,
+} from "./core/api.js";
 import { runReviewArchitecture } from "./core/engine.js";
 import {
   collectReviewContext,
@@ -10,7 +13,7 @@ import {
 } from "./core/git.js";
 import { publishInlineReview } from "./core/github-review.js";
 import { buildInlineReviewComments } from "./core/inline-comments.js";
-import { createOpenAiCompatibleProvider } from "./core/llm.js";
+import { createAsuAimlProvider } from "./core/llm.js";
 import { createLogger } from "./core/logging.js";
 import { loadArchitectureById } from "./core/manifest.js";
 
@@ -100,15 +103,17 @@ function getPullRequestHeadSha(): string | undefined {
 
 function buildProvider() {
   const apiKey = core.getInput("api-key", { required: true });
-  const baseUrl = core.getInput("base-url") || "https://api.openai.com/v1";
+  const baseUrl = core.getInput("base-url") || DEFAULT_ASU_BASE_URL;
+  const modelProvider = readOptionalInput("model-provider");
   const model = core.getInput("model", { required: true });
   const temperature = readFloatInput("temperature", 0.2);
   const timeoutMs = readIntegerInput("request-timeout-ms", 120000);
 
-  return createOpenAiCompatibleProvider(
-    createOpenAiCompatibleProviderConfig({
+  return createAsuAimlProvider(
+    createAsuAimlProviderConfig({
       apiKey,
       baseUrl,
+      modelProvider,
       model,
       temperature,
       timeoutMs,

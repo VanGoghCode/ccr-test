@@ -3,14 +3,17 @@ description: Review PR changes with configurable prompt architectures and write 
 author: GitHub Copilot
 inputs:
   api-key:
-    description: API key for the OpenAI-compatible review provider.
+    description: API key for the ASU AIML review provider.
     required: true
   base-url:
-    description: Base URL for the OpenAI-compatible chat completions endpoint.
+    description: Base URL for the ASU AIML query endpoint.
     required: false
-    default: https://api.openai.com/v1
+    default: https://api-main.aiml.asu.edu/queryV2
+  model-provider:
+    description: Optional ASU model provider identifier to send with query requests.
+    required: false
   model:
-    description: Model name to use for the review.
+    description: ASU model name to use for the review.
     required: true
   github-token:
     description: GitHub token with pull-requests write access used to post inline PR comments.
