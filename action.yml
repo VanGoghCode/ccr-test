@@ -12,6 +12,17 @@ inputs:
   model:
     description: Model name to use for the review.
     required: true
+  github-token:
+    description: GitHub token with pull-requests write access used to post inline PR comments.
+    required: false
+  post-inline-comments:
+    description: Whether to post short inline comments for mapped findings on pull request changed lines.
+    required: false
+    default: "false"
+  inline-comment-limit:
+    description: Maximum number of inline comments to post per pull request run.
+    required: false
+    default: "10"
   architecture:
     description: Prompt architecture to run.
     required: false
@@ -65,6 +76,10 @@ outputs:
     description: Number of review findings in the final report.
   architecture:
     description: The architecture that ran for the review.
+  inline-comments-posted:
+    description: Number of inline pull request comments posted by this run.
+  inline-comments-skipped:
+    description: Number of findings skipped while building inline pull request comments.
 runs:
   using: node20
   main: dist/index.js

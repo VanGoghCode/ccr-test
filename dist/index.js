@@ -23878,11 +23878,11 @@ var require_github = __commonJS({
     var Context = __importStar(require_context());
     var utils_1 = require_utils4();
     exports.context = new Context.Context();
-    function getOctokit(token, options, ...additionalPlugins) {
+    function getOctokit2(token, options, ...additionalPlugins) {
       const GitHubWithPlugins = utils_1.GitHub.plugin(...additionalPlugins);
       return new GitHubWithPlugins((0, utils_1.getOctokitOptions)(token, options));
     }
-    exports.getOctokit = getOctokit;
+    exports.getOctokit = getOctokit2;
   }
 });
 
@@ -29702,7 +29702,10 @@ var findingSchema = external_exports.object({
   title: external_exports.string().min(1),
   detail: external_exports.string().min(1),
   file: external_exports.string().optional(),
-  recommendation: external_exports.string().optional()
+  line: external_exports.number().int().positive().optional(),
+  endLine: external_exports.number().int().positive().optional(),
+  recommendation: external_exports.string().optional(),
+  suggestion: external_exports.string().optional()
 });
 var modelOutputSchema = external_exports.object({
   summary: external_exports.string().min(1),
@@ -29747,11 +29750,13 @@ function formatFindings(findings) {
     return "No findings were returned by the review model.";
   }
   return findings.map((finding) => {
-    const location = finding.file ? ` (${finding.file})` : "";
-    const recommendation = finding.recommendation ? `
-  Recommendation: ${finding.recommendation}` : "";
+    const lineLocation = typeof finding.line === "number" ? typeof finding.endLine === "number" && finding.endLine > finding.line ? `:${finding.line}-${finding.endLine}` : `:${finding.line}` : "";
+    const location = finding.file ? ` (${finding.file}${lineLocation})` : "";
+    const recommendation = finding.recommendation ?? finding.suggestion;
+    const recommendationLine = recommendation ? `
+  Recommendation: ${recommendation}` : "";
     return `- [${finding.severity.toUpperCase()}] ${finding.title}${location}
-  ${finding.detail}${recommendation}`;
+  ${finding.detail}${recommendationLine}`;
   }).join("\n");
 }
 function formatList(values) {
@@ -29862,6 +29867,17 @@ function truncateText(value, limit) {
   return `${value.slice(0, limit)}
 ... [truncated ${value.length - limit} characters]`;
 }
+function tryParseJson(value) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
 function buildRequestEnvelope(request, previousOutputs, stageIndex, stageCount, maxContextChars) {
   const fileBudget = Math.max(
     500,
@@ -29889,6 +29905,9 @@ function buildRequestEnvelope(request, previousOutputs, stageIndex, stageCount, 
       })),
       previousOutputs: previousOutputs.map(
         (output) => truncateText(output, previousOutputBudget)
+      ),
+      previousOutputsParsed: previousOutputs.map(
+        (output) => tryParseJson(output)
       )
     },
     null,
@@ -29904,7 +29923,10 @@ function buildSystemMessage(architecture, stageLabel, stagePurpose, mode) {
     `Stage purpose: ${stagePurpose}.`,
     "Return a JSON object with the following keys: summary, riskLevel, findings, todos, notes.",
     "Risk level must be one of low, medium, or high.",
-    "Findings should be an array of objects with severity, title, detail, and optional file and recommendation fields.",
+    "Findings should be an array of objects with severity, title, detail, optional file, optional line, optional endLine, and optional recommendation or suggestion fields.",
+    "When a finding maps to a changed file, set file and line to the changed-line anchor in the head revision.",
+    "Keep detail and recommendation concise so each finding can be posted as a short inline review comment.",
+    "If previousOutputsParsed is present, use it as the authoritative previous-stage context to avoid escaped JSON artifacts.",
     "Do not wrap the JSON in Markdown fences."
   ].join("\n");
 }
@@ -30095,7 +30117,7 @@ async function runReviewArchitecture(params) {
     };
   }
   if (architecture.mode === "sequential") {
-    const previousOutputs = [];
+    let previousStageOutput;
     for (const [index, stage] of architecture.stages.entries()) {
       const result = await executeStage({
         architecture,
@@ -30103,14 +30125,14 @@ async function runReviewArchitecture(params) {
         stageCount,
         stage,
         request,
-        previousOutputs: [...previousOutputs],
+        previousOutputs: previousStageOutput ? [previousStageOutput] : [],
         provider,
         logger,
         mode: architecture.mode,
         maxContextChars
       });
       stageOutputs.push(result);
-      previousOutputs.push(result.output);
+      previousStageOutput = result.output;
     }
     const finalStageResult = stageOutputs.at(-1);
     if (!finalStageResult) {
@@ -30390,6 +30412,354 @@ async function collectReviewContext(repositoryRoot, context2) {
   };
 }
 
+// src/core/github-review.ts
+var github = __toESM(require_github(), 1);
+async function publishInlineReview(params) {
+  if (params.comments.length === 0) {
+    return {
+      postedCount: 0
+    };
+  }
+  const octokit = github.getOctokit(params.githubToken);
+  const response = await octokit.rest.pulls.createReview({
+    owner: params.owner,
+    repo: params.repo,
+    pull_number: params.pullNumber,
+    event: "COMMENT",
+    body: params.reviewBody,
+    comments: params.comments.map((comment) => ({
+      path: comment.path,
+      line: comment.line,
+      side: "RIGHT",
+      body: comment.body
+    })),
+    commit_id: params.commitId
+  });
+  return {
+    postedCount: params.comments.length,
+    reviewId: response.data.id
+  };
+}
+
+// src/core/patch-map.ts
+var HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+function toPositiveInt(raw, fallback) {
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+function normalizeSearchText(value) {
+  return value.trim().replaceAll(/\s+/g, " ").toLowerCase();
+}
+function extractSearchCandidates(value) {
+  const raw = value.trim();
+  if (raw.length === 0) {
+    return [];
+  }
+  const fromNewlines = raw.split(/\r?\n+/).map((entry) => normalizeSearchText(entry)).filter((entry) => entry.length >= 8);
+  if (fromNewlines.length > 0) {
+    return fromNewlines.slice(0, 4);
+  }
+  const fromPunctuation = raw.split(/[.;:!?]+/).map((entry) => normalizeSearchText(entry)).filter((entry) => entry.length >= 8);
+  if (fromPunctuation.length > 0) {
+    return fromPunctuation.slice(0, 4);
+  }
+  return [normalizeSearchText(raw)];
+}
+function tokenize(value) {
+  return normalizeSearchText(value).split(/[^a-z0-9]+/).filter((token) => token.length >= 3);
+}
+function tokenOverlapScore(candidate, line) {
+  const candidateTokens = tokenize(candidate);
+  if (candidateTokens.length === 0) {
+    return {
+      score: 0,
+      overlaps: 0
+    };
+  }
+  const lineTokens = new Set(tokenize(line));
+  let overlaps = 0;
+  for (const token of candidateTokens) {
+    if (lineTokens.has(token)) {
+      overlaps += 1;
+    }
+  }
+  return {
+    score: overlaps / candidateTokens.length,
+    overlaps
+  };
+}
+function closestLine(target, lines) {
+  if (lines.length === 0) {
+    return void 0;
+  }
+  let best = lines[0];
+  let bestDistance = Math.abs(best - target);
+  for (const line of lines.slice(1)) {
+    const distance = Math.abs(line - target);
+    if (distance < bestDistance) {
+      best = line;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+function parseUnifiedDiffPatch(patch) {
+  if (patch.trim().length === 0) {
+    return {
+      hunks: [],
+      changedLines: [],
+      changedLineContentByLine: /* @__PURE__ */ new Map()
+    };
+  }
+  const lines = patch.split(/\r?\n/);
+  const hunks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = lines[index];
+    const match = header.match(HUNK_HEADER_PATTERN);
+    if (!match) {
+      continue;
+    }
+    const hunk = {
+      oldStart: toPositiveInt(match[1], 0),
+      oldCount: toPositiveInt(match[2], 1),
+      newStart: toPositiveInt(match[3], 0),
+      newCount: toPositiveInt(match[4], 1),
+      changedLines: [],
+      changedLineContents: []
+    };
+    let currentLine = hunk.newStart;
+    for (index += 1; index < lines.length; index += 1) {
+      const rawLine = lines[index];
+      if (rawLine.startsWith("@@ ")) {
+        index -= 1;
+        break;
+      }
+      if (rawLine.startsWith("+") && !rawLine.startsWith("+++")) {
+        const content = rawLine.slice(1);
+        hunk.changedLines.push(currentLine);
+        hunk.changedLineContents.push({
+          line: currentLine,
+          content
+        });
+        currentLine += 1;
+        continue;
+      }
+      if (rawLine.startsWith("-") && !rawLine.startsWith("---")) {
+        continue;
+      }
+      if (rawLine.startsWith(" ")) {
+        currentLine += 1;
+      }
+    }
+    hunks.push(hunk);
+  }
+  const changedLineContentByLine = /* @__PURE__ */ new Map();
+  for (const hunk of hunks) {
+    for (const entry of hunk.changedLineContents) {
+      changedLineContentByLine.set(entry.line, entry.content);
+    }
+  }
+  return {
+    hunks,
+    changedLines: Array.from(changedLineContentByLine.keys()).sort(
+      (left, right) => left - right
+    ),
+    changedLineContentByLine
+  };
+}
+function resolveChangedLine(params) {
+  const {
+    patchMap,
+    requestedLine,
+    searchText,
+    allowFallbackToFirstChangedLine = true
+  } = params;
+  if (patchMap.changedLines.length === 0) {
+    return void 0;
+  }
+  const changedLineSet = new Set(patchMap.changedLines);
+  if (typeof requestedLine === "number" && Number.isFinite(requestedLine)) {
+    const rounded = Math.round(requestedLine);
+    if (changedLineSet.has(rounded)) {
+      return rounded;
+    }
+    return closestLine(rounded, patchMap.changedLines);
+  }
+  if (searchText && searchText.trim().length > 0) {
+    const candidates = extractSearchCandidates(searchText);
+    let bestLine;
+    let bestScore = 0;
+    let bestOverlap = 0;
+    for (const candidate of candidates) {
+      for (const [
+        line,
+        content
+      ] of patchMap.changedLineContentByLine.entries()) {
+        const normalizedLine = normalizeSearchText(content);
+        if (normalizedLine.includes(candidate) || candidate.length >= 12 && candidate.includes(normalizedLine)) {
+          return line;
+        }
+        const overlap = tokenOverlapScore(candidate, normalizedLine);
+        if (overlap.overlaps > bestOverlap || overlap.overlaps === bestOverlap && overlap.score > bestScore) {
+          bestLine = line;
+          bestScore = overlap.score;
+          bestOverlap = overlap.overlaps;
+        }
+      }
+    }
+    if (bestLine && bestOverlap >= 2 && bestScore >= 0.2) {
+      return bestLine;
+    }
+  }
+  if (!allowFallbackToFirstChangedLine) {
+    return void 0;
+  }
+  return patchMap.changedLines[0];
+}
+
+// src/core/inline-comments.ts
+var MAX_INLINE_TITLE_CHARS = 90;
+var MAX_INLINE_DETAIL_CHARS = 220;
+var MAX_INLINE_SUGGESTION_CHARS = 180;
+var SEVERITY_PRIORITY = {
+  high: 3,
+  medium: 2,
+  low: 1
+};
+function createSkipCounter() {
+  return {
+    "missing-file": 0,
+    "unmatched-file": 0,
+    "no-changed-lines": 0,
+    "unresolved-line": 0,
+    duplicate: 0
+  };
+}
+function normalizePath(pathValue) {
+  return pathValue.replaceAll("\\", "/").trim().toLowerCase();
+}
+function clampText(value, maxLength) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(1, maxLength - 3)).trimEnd()}...`;
+}
+function formatInlineCommentBody(finding) {
+  const lines = [
+    `[${finding.severity.toUpperCase()}] ${clampText(finding.title.trim(), MAX_INLINE_TITLE_CHARS)}`,
+    clampText(finding.detail.trim(), MAX_INLINE_DETAIL_CHARS)
+  ];
+  const recommendation = finding.recommendation ?? finding.suggestion;
+  if (recommendation && recommendation.trim().length > 0) {
+    lines.push(
+      `Suggestion: ${clampText(recommendation.trim(), MAX_INLINE_SUGGESTION_CHARS)}`
+    );
+  }
+  return lines.join("\n");
+}
+function sortBySeverity(findings) {
+  return [...findings].sort((left, right) => {
+    const priorityDelta = SEVERITY_PRIORITY[right.severity] - SEVERITY_PRIORITY[left.severity];
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    return left.title.localeCompare(right.title);
+  });
+}
+function resolveFileRecord(findingFile, files) {
+  const normalizedTarget = normalizePath(findingFile);
+  const exact = files.find(
+    (file) => normalizePath(file.path) === normalizedTarget
+  );
+  if (exact) {
+    return exact;
+  }
+  const suffixMatches = files.filter((file) => {
+    const normalizedFilePath = normalizePath(file.path);
+    return normalizedFilePath.endsWith(`/${normalizedTarget}`) || normalizedFilePath.endsWith(normalizedTarget);
+  });
+  if (suffixMatches.length === 0) {
+    return void 0;
+  }
+  return suffixMatches.sort(
+    (left, right) => left.path.length - right.path.length
+  )[0];
+}
+function buildInlineReviewComments(options) {
+  const maxComments = Math.max(0, Math.floor(options.maxComments));
+  const skippedByReason = createSkipCounter();
+  if (maxComments === 0 || options.findings.length === 0) {
+    return {
+      comments: [],
+      skippedCount: 0,
+      skippedByReason
+    };
+  }
+  const patchCache = /* @__PURE__ */ new Map();
+  const commentKeys = /* @__PURE__ */ new Set();
+  const comments = [];
+  for (const finding of sortBySeverity(options.findings)) {
+    if (comments.length >= maxComments) {
+      break;
+    }
+    if (!finding.file || finding.file.trim().length === 0) {
+      skippedByReason["missing-file"] += 1;
+      continue;
+    }
+    const fileRecord = resolveFileRecord(finding.file, options.files);
+    if (!fileRecord) {
+      skippedByReason["unmatched-file"] += 1;
+      continue;
+    }
+    const patchCacheKey = fileRecord.path;
+    const patchMap = patchCache.get(patchCacheKey) ?? parseUnifiedDiffPatch(fileRecord.patch ?? "");
+    patchCache.set(patchCacheKey, patchMap);
+    if (patchMap.changedLines.length === 0) {
+      skippedByReason["no-changed-lines"] += 1;
+      continue;
+    }
+    const resolvedLine = resolveChangedLine({
+      patchMap,
+      requestedLine: finding.line,
+      searchText: `${finding.title}
+${finding.detail}`,
+      allowFallbackToFirstChangedLine: options.allowFallbackToFirstChangedLine ?? true
+    });
+    if (typeof resolvedLine !== "number") {
+      skippedByReason["unresolved-line"] += 1;
+      continue;
+    }
+    const dedupeKey = `${fileRecord.path}:${resolvedLine}:${finding.title.trim().toLowerCase()}`;
+    if (commentKeys.has(dedupeKey)) {
+      skippedByReason.duplicate += 1;
+      continue;
+    }
+    commentKeys.add(dedupeKey);
+    comments.push({
+      path: fileRecord.path,
+      line: resolvedLine,
+      body: formatInlineCommentBody(finding),
+      severity: finding.severity,
+      title: finding.title
+    });
+  }
+  const skippedCount = Object.values(skippedByReason).reduce(
+    (total, count) => total + count,
+    0
+  );
+  return {
+    comments,
+    skippedCount,
+    skippedByReason
+  };
+}
+
 // src/core/llm.ts
 function toCompletionUrl(baseUrl) {
   return new URL(
@@ -30617,6 +30987,41 @@ function readFloatInput(name, fallback) {
   }
   return parsed;
 }
+function readBooleanInput(name, fallback) {
+  const raw = core.getInput(name);
+  if (!raw) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (["true", "1", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`Input ${name} must be a boolean value.`);
+}
+function readOptionalInput(name) {
+  const value = core.getInput(name);
+  if (!value || value.trim().length === 0) {
+    return void 0;
+  }
+  return value.trim();
+}
+function getPullRequestNumber() {
+  const pullRequest = import_github.context.payload.pull_request;
+  if (!pullRequest || typeof pullRequest.number !== "number") {
+    return void 0;
+  }
+  return pullRequest.number;
+}
+function getPullRequestHeadSha() {
+  const pullRequest = import_github.context.payload.pull_request;
+  if (!pullRequest || !pullRequest.head || typeof pullRequest.head.sha !== "string") {
+    return void 0;
+  }
+  return pullRequest.head.sha;
+}
 function buildProvider() {
   const apiKey = core.getInput("api-key", { required: true });
   const baseUrl = core.getInput("base-url") || "https://api.openai.com/v1";
@@ -30643,6 +31048,9 @@ async function main() {
       "exclude-globs",
       "node_modules/**,dist/**,coverage/**,.git/**"
     );
+    const postInlineComments = readBooleanInput("post-inline-comments", false);
+    const inlineCommentLimit = readIntegerInput("inline-comment-limit", 10);
+    const githubToken = readOptionalInput("github-token") ?? process.env.GITHUB_TOKEN;
     const maxFiles = readIntegerInput("max-files", 25);
     const maxContextChars = readIntegerInput("max-context-chars", 12e3);
     const repoRoot = process.cwd();
@@ -30695,11 +31103,72 @@ async function main() {
     const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(path4.dirname(absoluteOutputPath), { recursive: true });
     await writeFile(absoluteOutputPath, result.report.markdown, "utf8");
+    let inlineCommentsPosted = 0;
+    let inlineCommentsSkipped = 0;
+    if (postInlineComments) {
+      const pullRequestNumber = getPullRequestNumber();
+      if (!pullRequestNumber) {
+        logger.warn(
+          "Inline comment posting skipped because pull_request context is unavailable."
+        );
+      } else if (!githubToken) {
+        logger.warn(
+          "Inline comment posting skipped because github-token input is not configured."
+        );
+      } else {
+        const inlineCommentResult = buildInlineReviewComments({
+          findings: result.report.findings,
+          files,
+          maxComments: inlineCommentLimit
+        });
+        inlineCommentsSkipped = inlineCommentResult.skippedCount;
+        if (inlineCommentResult.comments.length === 0) {
+          logger.warn(
+            "Inline comment posting skipped because findings could not be mapped to changed lines.",
+            {
+              skippedByReason: inlineCommentResult.skippedByReason
+            }
+          );
+        } else {
+          const owner = import_github.context.repo.owner;
+          const repo = import_github.context.repo.repo;
+          if (!owner || !repo) {
+            logger.warn(
+              "Inline comment posting skipped because repository metadata is unavailable."
+            );
+          } else {
+            const publishResult = await publishInlineReview({
+              githubToken,
+              owner,
+              repo,
+              pullNumber: pullRequestNumber,
+              commitId: getPullRequestHeadSha(),
+              comments: inlineCommentResult.comments,
+              reviewBody: [
+                "CCR inline review comments",
+                "",
+                `Architecture: ${result.report.architectureLabel}`,
+                `Risk: ${result.report.riskLevel}`,
+                `Summary: ${result.report.summary}`
+              ].join("\n")
+            });
+            inlineCommentsPosted = publishResult.postedCount;
+            logger.info("Inline review comments posted.", {
+              postedCount: inlineCommentsPosted,
+              skippedCount: inlineCommentsSkipped,
+              reviewId: publishResult.reviewId
+            });
+          }
+        }
+      }
+    }
     core.setOutput("report-path", absoluteOutputPath);
     core.setOutput("summary", result.report.summary);
     core.setOutput("risk-level", result.report.riskLevel);
     core.setOutput("finding-count", String(result.report.findings.length));
     core.setOutput("architecture", result.report.architectureId);
+    core.setOutput("inline-comments-posted", String(inlineCommentsPosted));
+    core.setOutput("inline-comments-skipped", String(inlineCommentsSkipped));
     core.info(`CCR.md written to ${absoluteOutputPath}`);
   } catch (error2) {
     const message = error2 instanceof Error ? error2.message : String(error2);

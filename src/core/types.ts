@@ -63,7 +63,10 @@ export interface ReviewFinding {
   title: string;
   detail: string;
   file?: string;
+  line?: number;
+  endLine?: number;
   recommendation?: string;
+  suggestion?: string;
 }
 
 export interface ReviewModelOutput {

@@ -2,9 +2,9 @@ import { parseReviewModelOutput, renderReviewMarkdown } from "./report.js";
 import type {
   LoadedPromptArchitecture,
   ReviewLogger,
-  ReviewProviderResult,
   ReviewProvider,
   ReviewProviderMessage,
+  ReviewProviderResult,
   ReviewRequest,
   ReviewRunResult,
   ReviewTokenUsage,
@@ -112,7 +112,9 @@ function buildSystemMessage(
     `Stage purpose: ${stagePurpose}.`,
     "Return a JSON object with the following keys: summary, riskLevel, findings, todos, notes.",
     "Risk level must be one of low, medium, or high.",
-    "Findings should be an array of objects with severity, title, detail, and optional file and recommendation fields.",
+    "Findings should be an array of objects with severity, title, detail, optional file, optional line, optional endLine, and optional recommendation or suggestion fields.",
+    "When a finding maps to a changed file, set file and line to the changed-line anchor in the head revision.",
+    "Keep detail and recommendation concise so each finding can be posted as a short inline review comment.",
     "If previousOutputsParsed is present, use it as the authoritative previous-stage context to avoid escaped JSON artifacts.",
     "Do not wrap the JSON in Markdown fences.",
   ].join("\n");
@@ -183,7 +185,8 @@ function normalizeUsage(
   const fallbackCompletionTokens = estimateTokensFromText(output);
 
   const promptTokens =
-    typeof usage?.promptTokens === "number" && Number.isFinite(usage.promptTokens)
+    typeof usage?.promptTokens === "number" &&
+    Number.isFinite(usage.promptTokens)
       ? Math.max(0, Math.round(usage.promptTokens))
       : fallbackPromptTokens;
   const completionTokens =

@@ -13,7 +13,10 @@ const findingSchema = z.object({
   title: z.string().min(1),
   detail: z.string().min(1),
   file: z.string().optional(),
+  line: z.number().int().positive().optional(),
+  endLine: z.number().int().positive().optional(),
   recommendation: z.string().optional(),
+  suggestion: z.string().optional(),
 });
 
 const modelOutputSchema = z.object({
@@ -68,11 +71,19 @@ function formatFindings(findings: ReviewFinding[]): string {
 
   return findings
     .map((finding) => {
-      const location = finding.file ? ` (${finding.file})` : "";
-      const recommendation = finding.recommendation
-        ? `\n  Recommendation: ${finding.recommendation}`
+      const lineLocation =
+        typeof finding.line === "number"
+          ? typeof finding.endLine === "number" &&
+            finding.endLine > finding.line
+            ? `:${finding.line}-${finding.endLine}`
+            : `:${finding.line}`
+          : "";
+      const location = finding.file ? ` (${finding.file}${lineLocation})` : "";
+      const recommendation = finding.recommendation ?? finding.suggestion;
+      const recommendationLine = recommendation
+        ? `\n  Recommendation: ${recommendation}`
         : "";
-      return `- [${finding.severity.toUpperCase()}] ${finding.title}${location}\n  ${finding.detail}${recommendation}`;
+      return `- [${finding.severity.toUpperCase()}] ${finding.title}${location}\n  ${finding.detail}${recommendationLine}`;
     })
     .join("\n");
 }

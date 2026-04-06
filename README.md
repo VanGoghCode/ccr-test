@@ -13,6 +13,7 @@ The repository also includes a local sandbox UI so you can test the action logic
   - `iterative`: six shared sequential stages that refine the previous stage output.
   - `parallel`: the same six shared stages in parallel followed by a combine stage.
 - Writes the final markdown report to `CCR.md` or a path you choose.
+- Optionally posts short inline pull request review comments on mapped changed lines.
 - Exposes outputs for the report path, summary, risk level, finding count, and architecture ID.
 
 Prompt files are part of this repository and are bundled with each action release tag.
@@ -43,6 +44,9 @@ The action reads these prompts from the bundled action path in GitHub Actions, s
 | `api-key` | Yes | - | API key for the OpenAI-compatible review provider. |
 | `base-url` | No | `https://api.openai.com/v1` | Base URL for the chat completions endpoint. |
 | `model` | Yes | - | Model name to use for the review. |
+| `github-token` | No | - | GitHub token used to publish inline PR comments when enabled. |
+| `post-inline-comments` | No | `false` | Whether to publish short inline comments on changed lines in pull requests. |
+| `inline-comment-limit` | No | `10` | Maximum number of inline comments posted per run. |
 | `architecture` | No | `single-pass` | Which architecture manifest to run. |
 | `prompt-root` | No | `prompts` | Directory containing the architecture manifests and prompt files. |
 | `output-path` | No | `CCR.md` | Where the final markdown report should be written. |
@@ -64,14 +68,24 @@ The action reads these prompts from the bundled action path in GitHub Actions, s
 | `risk-level` | Final risk level returned by the review. |
 | `finding-count` | Number of findings in the generated report. |
 | `architecture` | Architecture ID that ran for the review. |
+| `inline-comments-posted` | Number of inline comments posted on the pull request. |
+| `inline-comments-skipped` | Number of findings skipped during inline comment mapping. |
 
 ## Permissions
 
-The action only needs repository contents read access.
+Minimum permission for report generation:
 
 ```yaml
 permissions:
   contents: read
+```
+
+If you enable inline PR comments, add pull request write permission:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
 ```
 
 When the action runs on pull request events, use `actions/checkout@v4` with `fetch-depth: 0` so the diff range can be resolved reliably.
@@ -87,6 +101,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   review:
@@ -102,9 +117,12 @@ jobs:
         uses: your-org/your-repo@v1
         with:
           api-key: ${{ secrets.CREATEAI_API_KEY }}
+          github-token: ${{ github.token }}
           base-url: https://platform.aiml.asu.edu/api
           model: gpt5_2
           architecture: parallel
+          post-inline-comments: "true"
+          inline-comment-limit: "10"
           output-path: CCR.md
 
       - name: Upload CCR report
@@ -116,22 +134,11 @@ jobs:
           if-no-files-found: ignore
 ```
 
-## Quick Setup In Customer Repo
+## Quick Setup In Any Repository
 
-1. Publish and tag this action repo.
-
-```bash
-npm ci
-npm test
-npm run build
-git tag v1.0.1
-git push origin v1.0.1
-git tag -f v1
-git push origin -f v1
-```
-
-2. In the customer repository, add a secret named `CREATEAI_API_KEY`.
-3. Add the workflow shown above at `.github/workflows/ccr-review.yml`.
+1. Add the workflow shown above at `.github/workflows/ccr-review.yml`.
+2. Set `uses` to the published action tag, for example `your-org/your-repo@v1`.
+3. Add a repository secret named `CREATEAI_API_KEY`.
 4. Open a PR and verify `CCR.md` is generated in the workflow artifact.
 
 ## Common Customizations
@@ -141,6 +148,8 @@ Change these `with` inputs in the workflow:
 - `architecture`: `single-pass` | `iterative` | `parallel`
 - `model`: set your preferred model name
 - `base-url`: set your OpenAI-compatible endpoint
+- `post-inline-comments`: `true` to publish short line-level PR comments
+- `inline-comment-limit`: cap inline comments per run
 - `output-path`: change review report output file
 - `include-globs` / `exclude-globs`: limit reviewed files
 - `max-files` / `max-context-chars`: control payload size
@@ -149,14 +158,14 @@ Change these `with` inputs in the workflow:
 ## Prompt Source Options
 
 - Default: use prompts bundled inside this action release.
-- Customer-specific prompts: keep the same prompt/manifest structure in the customer repo and set an absolute prompt root.
+- Repository-specific prompts: keep the same prompt/manifest structure in the repository where the workflow runs and set an absolute prompt root.
 
 ```yaml
 with:
   prompt-root: ${{ github.workspace }}/.github/ccr-prompts
 ```
 
-Relative `prompt-root` resolves inside the action package path. Use absolute path for customer repo prompt folders.
+Relative `prompt-root` resolves inside the action package path. Use absolute path for repository-local prompt folders.
 
 ## Sandbox UI
 
@@ -214,6 +223,6 @@ npm run typecheck
 
 ## Notes
 
-- The action writes `CCR.md` only; it does not commit or comment on pull requests.
-- Update prompts in this repository and release a new tag when you want all consumer repositories to use new review behavior.
+- The action always writes `CCR.md`. Inline PR comments are optional and require `post-inline-comments: "true"` plus `pull-requests: write` permission.
+- Update prompts in this repository and release a new tag when you want all repositories using this action to get new review behavior.
 - The sandbox and the action share the same engine so local tests mirror the publishable behavior.
