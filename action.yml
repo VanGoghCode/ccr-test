@@ -27,6 +27,10 @@ inputs:
     description: Maximum number of inline comments to post per pull request run.
     required: false
     default: "10"
+  inline-comment-mode:
+    description: Inline comment strategy. Use findings for per-finding comments or file-coverage to ensure at least one comment per file with mappable findings.
+    required: false
+    default: findings
   architecture:
     description: Prompt architecture to run.
     required: false
@@ -85,7 +89,7 @@ outputs:
   inline-comments-skipped:
     description: Number of findings skipped while building inline pull request comments.
 runs:
-  using: node20
+  using: node24
   main: dist/index.cjs
 branding:
   icon: search

@@ -30760,8 +30760,46 @@ function resolveFileRecord(findingFile, files) {
     (left, right) => left.path.length - right.path.length
   )[0];
 }
+function resolveInlineCommentCandidate(params) {
+  const { finding, files, patchCache, allowFallbackToFirstChangedLine } = params;
+  if (!finding.file || finding.file.trim().length === 0) {
+    return { reason: "missing-file" };
+  }
+  const fileRecord = resolveFileRecord(finding.file, files);
+  if (!fileRecord) {
+    return { reason: "unmatched-file" };
+  }
+  const patchCacheKey = fileRecord.path;
+  const patchMap = patchCache.get(patchCacheKey) ?? parseUnifiedDiffPatch(fileRecord.patch ?? "");
+  patchCache.set(patchCacheKey, patchMap);
+  if (patchMap.changedLines.length === 0) {
+    return { reason: "no-changed-lines" };
+  }
+  const resolvedLine = resolveChangedLine({
+    patchMap,
+    requestedLine: finding.line,
+    searchText: `${finding.title}
+${finding.detail}`,
+    allowFallbackToFirstChangedLine
+  });
+  if (typeof resolvedLine !== "number") {
+    return { reason: "unresolved-line" };
+  }
+  const dedupeKey = `${fileRecord.path}:${resolvedLine}:${finding.title.trim().toLowerCase()}`;
+  return {
+    candidate: {
+      path: fileRecord.path,
+      line: resolvedLine,
+      body: formatInlineCommentBody(finding),
+      severity: finding.severity,
+      title: finding.title,
+      dedupeKey
+    }
+  };
+}
 function buildInlineReviewComments(options) {
   const maxComments = Math.max(0, Math.floor(options.maxComments));
+  const strategy = options.strategy ?? "findings";
   const skippedByReason = createSkipCounter();
   if (maxComments === 0 || options.findings.length === 0) {
     return {
@@ -30773,50 +30811,70 @@ function buildInlineReviewComments(options) {
   const patchCache = /* @__PURE__ */ new Map();
   const commentKeys = /* @__PURE__ */ new Set();
   const comments = [];
+  const allowFallbackToFirstChangedLine = options.allowFallbackToFirstChangedLine ?? true;
+  const candidates = [];
   for (const finding of sortBySeverity(options.findings)) {
-    if (comments.length >= maxComments) {
-      break;
-    }
-    if (!finding.file || finding.file.trim().length === 0) {
-      skippedByReason["missing-file"] += 1;
-      continue;
-    }
-    const fileRecord = resolveFileRecord(finding.file, options.files);
-    if (!fileRecord) {
-      skippedByReason["unmatched-file"] += 1;
-      continue;
-    }
-    const patchCacheKey = fileRecord.path;
-    const patchMap = patchCache.get(patchCacheKey) ?? parseUnifiedDiffPatch(fileRecord.patch ?? "");
-    patchCache.set(patchCacheKey, patchMap);
-    if (patchMap.changedLines.length === 0) {
-      skippedByReason["no-changed-lines"] += 1;
-      continue;
-    }
-    const resolvedLine = resolveChangedLine({
-      patchMap,
-      requestedLine: finding.line,
-      searchText: `${finding.title}
-${finding.detail}`,
-      allowFallbackToFirstChangedLine: options.allowFallbackToFirstChangedLine ?? true
+    const resolution = resolveInlineCommentCandidate({
+      finding,
+      files: options.files,
+      patchCache,
+      allowFallbackToFirstChangedLine
     });
-    if (typeof resolvedLine !== "number") {
-      skippedByReason["unresolved-line"] += 1;
+    if (resolution.reason) {
+      skippedByReason[resolution.reason] += 1;
       continue;
     }
-    const dedupeKey = `${fileRecord.path}:${resolvedLine}:${finding.title.trim().toLowerCase()}`;
-    if (commentKeys.has(dedupeKey)) {
+    if (resolution.candidate) {
+      candidates.push(resolution.candidate);
+    }
+  }
+  const tryAddComment = (candidate) => {
+    if (commentKeys.has(candidate.dedupeKey)) {
       skippedByReason.duplicate += 1;
-      continue;
+      return false;
     }
-    commentKeys.add(dedupeKey);
+    commentKeys.add(candidate.dedupeKey);
     comments.push({
-      path: fileRecord.path,
-      line: resolvedLine,
-      body: formatInlineCommentBody(finding),
-      severity: finding.severity,
-      title: finding.title
+      path: candidate.path,
+      line: candidate.line,
+      body: candidate.body,
+      severity: candidate.severity,
+      title: candidate.title
     });
+    return true;
+  };
+  if (strategy === "file-coverage") {
+    const selectedInCoveragePass = /* @__PURE__ */ new Set();
+    const bestByFile = /* @__PURE__ */ new Map();
+    for (const candidate of candidates) {
+      if (!bestByFile.has(candidate.path)) {
+        bestByFile.set(candidate.path, candidate);
+      }
+    }
+    for (const candidate of bestByFile.values()) {
+      if (comments.length >= maxComments) {
+        break;
+      }
+      if (tryAddComment(candidate)) {
+        selectedInCoveragePass.add(candidate.dedupeKey);
+      }
+    }
+    for (const candidate of candidates) {
+      if (comments.length >= maxComments) {
+        break;
+      }
+      if (selectedInCoveragePass.has(candidate.dedupeKey)) {
+        continue;
+      }
+      tryAddComment(candidate);
+    }
+  } else {
+    for (const candidate of candidates) {
+      if (comments.length >= maxComments) {
+        break;
+      }
+      tryAddComment(candidate);
+    }
   }
   const skippedCount = Object.values(skippedByReason).reduce(
     (total, count) => total + count,
@@ -31127,6 +31185,19 @@ function readOptionalInput(name) {
   }
   return value.trim();
 }
+function readInlineCommentStrategyInput(name, fallback) {
+  const raw = core.getInput(name);
+  if (!raw) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "findings" || normalized === "file-coverage") {
+    return normalized;
+  }
+  throw new Error(
+    `Input ${name} must be one of: findings, file-coverage.`
+  );
+}
 function getPullRequestNumber() {
   const pullRequest = import_github.context.payload.pull_request;
   if (!pullRequest || typeof pullRequest.number !== "number") {
@@ -31171,6 +31242,10 @@ async function main() {
     );
     const postInlineComments = readBooleanInput("post-inline-comments", false);
     const inlineCommentLimit = readIntegerInput("inline-comment-limit", 10);
+    const inlineCommentMode = readInlineCommentStrategyInput(
+      "inline-comment-mode",
+      "findings"
+    );
     const githubToken = readOptionalInput("github-token") ?? process.env.GITHUB_TOKEN;
     const maxFiles = readIntegerInput("max-files", 25);
     const maxContextChars = readIntegerInput("max-context-chars", 12e3);
@@ -31240,16 +31315,23 @@ async function main() {
         const inlineCommentResult = buildInlineReviewComments({
           findings: result.report.findings,
           files,
-          maxComments: inlineCommentLimit
+          maxComments: inlineCommentLimit,
+          strategy: inlineCommentMode
         });
         inlineCommentsSkipped = inlineCommentResult.skippedCount;
         if (inlineCommentResult.comments.length === 0) {
-          logger.warn(
-            "Inline comment posting skipped because findings could not be mapped to changed lines.",
-            {
-              skippedByReason: inlineCommentResult.skippedByReason
-            }
-          );
+          if (result.report.findings.length === 0) {
+            logger.info(
+              "Inline comment posting skipped because the review returned no findings."
+            );
+          } else {
+            logger.warn(
+              "Inline comment posting skipped because findings could not be mapped to changed lines.",
+              {
+                skippedByReason: inlineCommentResult.skippedByReason
+              }
+            );
+          }
         } else {
           const owner = import_github.context.repo.owner;
           const repo = import_github.context.repo.repo;

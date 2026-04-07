@@ -48,6 +48,7 @@ The action reads these prompts from the bundled action path in GitHub Actions, s
 | `github-token` | No | - | GitHub token used to publish inline PR comments when enabled. |
 | `post-inline-comments` | No | `false` | Whether to publish short inline comments on changed lines in pull requests. |
 | `inline-comment-limit` | No | `10` | Maximum number of inline comments posted per run. |
+| `inline-comment-mode` | No | `findings` | Inline comment strategy: `findings` posts per finding, `file-coverage` ensures at least one comment per file with mappable findings. |
 | `architecture` | No | `single-pass` | Which architecture manifest to run. |
 | `prompt-root` | No | `prompts` | Directory containing the architecture manifests and prompt files. |
 | `output-path` | No | `CCR.md` | Where the final markdown report should be written. |
@@ -125,6 +126,7 @@ jobs:
           architecture: parallel
           post-inline-comments: "true"
           inline-comment-limit: "10"
+          inline-comment-mode: file-coverage
           output-path: CCR.md
 
       - name: Upload CCR report
@@ -153,6 +155,7 @@ Change these `with` inputs in the workflow:
 - `model-provider`: set your ASU provider identifier when required
 - `post-inline-comments`: `true` to publish short line-level PR comments
 - `inline-comment-limit`: cap inline comments per run
+- `inline-comment-mode`: `findings` for per-finding comments, `file-coverage` to prioritize one comment per changed file with mappable findings
 - `output-path`: change review report output file
 - `include-globs` / `exclude-globs`: limit reviewed files
 - `max-files` / `max-context-chars`: control payload size

@@ -1,0 +1,52 @@
+name: CCR Review Sample
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  ccr-review:
+    if: ${{ github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run CCR review action
+        uses: VanGoghCode/ccr-test@v1
+        with:
+          api-key: ${{ secrets.ASU_API_KEY }}
+          base-url: https://api-main.aiml.asu.edu/queryV2
+          model: gpt5_2
+          model-provider: asu
+          # Architecture guide:
+          # - single-pass: fastest + lowest cost; best for small PRs.
+          # - iterative: deeper step-by-step analysis; best for medium PRs.
+          # - parallel: broadest coverage + best for high-risk/large PRs.
+          architecture: parallel
+          post-inline-comments: "true"
+          inline-comment-limit: "10"
+          inline-comment-mode: file-coverage
+          github-token: ${{ github.token }}
+          output-path: CCR.md
+          include-globs: "**/*"
+          exclude-globs: "node_modules/**,dist/**,coverage/**,.git/**"
+          max-files: "25"
+          max-context-chars: "12000"
+          temperature: "0.2"
+          request-timeout-ms: "120000"
+
+      - name: Upload CCR markdown report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccr-report-${{ github.run_id }}
+          path: CCR.md
+          if-no-files-found: ignore

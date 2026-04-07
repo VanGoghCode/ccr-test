@@ -103,6 +103,65 @@ describe("inline comments", () => {
     expect(result.comments[0]?.title).toBe("First");
   });
 
+  it("prioritizes one comment per file with file-coverage mode", () => {
+    const result = buildInlineReviewComments({
+      findings: [
+        {
+          severity: "high",
+          title: "High risk in a",
+          detail: "First issue in file a.",
+          file: "src/a.ts",
+          line: 2,
+        },
+        {
+          severity: "medium",
+          title: "Another issue in a",
+          detail: "Second issue in file a.",
+          file: "src/a.ts",
+          line: 3,
+        },
+        {
+          severity: "low",
+          title: "Issue in b",
+          detail: "Issue in file b.",
+          file: "src/b.ts",
+          line: 4,
+        },
+      ],
+      files: [
+        {
+          path: "src/a.ts",
+          name: "a.ts",
+          content: "export const a = 1;\nexport const b = 2;\n",
+          patch: [
+            "@@ -1,2 +1,3 @@",
+            " export const a = 1;",
+            "+export const b = 2;",
+            "+export const c = 3;",
+          ].join("\n"),
+        },
+        {
+          path: "src/b.ts",
+          name: "b.ts",
+          content: "export const value = true;\n",
+          patch: [
+            "@@ -1,1 +1,2 @@",
+            " export const value = true;",
+            "+export const status = 'ok';",
+          ].join("\n"),
+        },
+      ],
+      maxComments: 2,
+      strategy: "file-coverage",
+    });
+
+    expect(result.comments).toHaveLength(2);
+    expect(result.comments.map((comment) => comment.path).sort()).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+    ]);
+  });
+
   it("skips findings when file has no changed lines", () => {
     const result = buildInlineReviewComments({
       findings: [

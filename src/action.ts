@@ -13,7 +13,10 @@ import {
   resolveGitRange,
 } from "./core/git.js";
 import { publishInlineReview } from "./core/github-review.js";
-import { buildInlineReviewComments } from "./core/inline-comments.js";
+import {
+  buildInlineReviewComments,
+  type InlineCommentStrategy,
+} from "./core/inline-comments.js";
 import { createAsuAimlProvider } from "./core/llm.js";
 import { createLogger } from "./core/logging.js";
 import { loadArchitectureById } from "./core/manifest.js";
@@ -80,6 +83,25 @@ function readOptionalInput(name: string): string | undefined {
   return value.trim();
 }
 
+function readInlineCommentStrategyInput(
+  name: string,
+  fallback: InlineCommentStrategy,
+): InlineCommentStrategy {
+  const raw = core.getInput(name);
+  if (!raw) {
+    return fallback;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "findings" || normalized === "file-coverage") {
+    return normalized;
+  }
+
+  throw new Error(
+    `Input ${name} must be one of: findings, file-coverage.`,
+  );
+}
+
 function getPullRequestNumber(): number | undefined {
   const pullRequest = context.payload.pull_request;
   if (!pullRequest || typeof pullRequest.number !== "number") {
@@ -135,6 +157,10 @@ async function main(): Promise<void> {
     );
     const postInlineComments = readBooleanInput("post-inline-comments", false);
     const inlineCommentLimit = readIntegerInput("inline-comment-limit", 10);
+    const inlineCommentMode = readInlineCommentStrategyInput(
+      "inline-comment-mode",
+      "findings",
+    );
     const githubToken =
       readOptionalInput("github-token") ?? process.env.GITHUB_TOKEN;
     const maxFiles = readIntegerInput("max-files", 25);
@@ -217,16 +243,23 @@ async function main(): Promise<void> {
           findings: result.report.findings,
           files,
           maxComments: inlineCommentLimit,
+          strategy: inlineCommentMode,
         });
         inlineCommentsSkipped = inlineCommentResult.skippedCount;
 
         if (inlineCommentResult.comments.length === 0) {
-          logger.warn(
-            "Inline comment posting skipped because findings could not be mapped to changed lines.",
-            {
-              skippedByReason: inlineCommentResult.skippedByReason,
-            },
-          );
+          if (result.report.findings.length === 0) {
+            logger.info(
+              "Inline comment posting skipped because the review returned no findings.",
+            );
+          } else {
+            logger.warn(
+              "Inline comment posting skipped because findings could not be mapped to changed lines.",
+              {
+                skippedByReason: inlineCommentResult.skippedByReason,
+              },
+            );
+          }
         } else {
           const owner = context.repo.owner;
           const repo = context.repo.repo;
