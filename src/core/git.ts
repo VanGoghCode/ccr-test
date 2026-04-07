@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import * as github from "@actions/github";
 import picomatch from "picomatch";
 import type { ReviewContext, ReviewFileInput } from "./types.js";
 
@@ -21,10 +22,35 @@ export interface CollectReviewFilesOptions {
   repositoryName?: string;
 }
 
+export interface CollectPullRequestReviewFilesOptions {
+  githubToken: string;
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  baseRef: string;
+  headRef: string;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+  maxFiles?: number;
+}
+
 const COMMIT_FIELD_SEPARATOR = "\u001f";
 const COMMIT_RECORD_SEPARATOR = "\u001e";
 const DEFAULT_MAX_COMMIT_MESSAGES = 20;
 const DEFAULT_MAX_COMMIT_MESSAGE_CHARS = 400;
+
+interface PullRequestFileRecord {
+  filename: string;
+  status: string;
+  patch?: string;
+  previous_filename?: string;
+}
+
+interface RepositoryContentFile {
+  type?: string;
+  content?: string;
+  encoding?: string;
+}
 
 function splitStatusLine(line: string): {
   status: string;
@@ -60,6 +86,23 @@ function normalizeStatus(status: string): ReviewFileInput["status"] {
   if (status.startsWith("C")) {
     return "copied";
   }
+  return "modified";
+}
+
+function normalizePullRequestStatus(status: string): ReviewFileInput["status"] {
+  if (status === "added") {
+    return "added";
+  }
+  if (status === "removed") {
+    return "deleted";
+  }
+  if (status === "renamed") {
+    return "renamed";
+  }
+  if (status === "copied") {
+    return "copied";
+  }
+
   return "modified";
 }
 
@@ -199,6 +242,40 @@ async function readFileAtRef(
   }
 }
 
+async function readRepositoryFileFromGitHubRef(params: {
+  octokit: ReturnType<typeof github.getOctokit>;
+  owner: string;
+  repo: string;
+  filePath: string;
+  ref: string;
+}): Promise<string> {
+  try {
+    const response = await params.octokit.rest.repos.getContent({
+      owner: params.owner,
+      repo: params.repo,
+      path: params.filePath,
+      ref: params.ref,
+    });
+
+    const data = response.data as RepositoryContentFile | unknown[];
+    if (Array.isArray(data) || data.type !== "file") {
+      return "";
+    }
+
+    if (typeof data.content !== "string") {
+      return "";
+    }
+
+    if (data.encoding === "base64") {
+      return Buffer.from(data.content, "base64").toString("utf8");
+    }
+
+    return data.content;
+  } catch {
+    return "";
+  }
+}
+
 export async function resolveGitRange(
   repositoryRoot: string,
   context: ReviewContext,
@@ -310,6 +387,69 @@ export async function collectReviewFiles(
   }
 
   return files;
+}
+
+export async function collectPullRequestReviewFiles(
+  options: CollectPullRequestReviewFilesOptions,
+): Promise<ReviewFileInput[]> {
+  const {
+    githubToken,
+    owner,
+    repo,
+    pullNumber,
+    baseRef,
+    headRef,
+    includeGlobs,
+    excludeGlobs,
+    maxFiles = 25,
+  } = options;
+
+  const octokit = github.getOctokit(githubToken);
+  const listedFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100,
+  });
+  const fileRecords = listedFiles as PullRequestFileRecord[];
+
+  const selectedPaths = filterReviewPaths(
+    fileRecords.map((entry) => entry.filename),
+    includeGlobs,
+    excludeGlobs,
+  ).slice(0, maxFiles);
+  const selectedPathSet = new Set(selectedPaths);
+
+  const selectedRecords = fileRecords.filter((record) =>
+    selectedPathSet.has(record.filename),
+  );
+
+  return Promise.all(
+    selectedRecords.map(async (record) => {
+      const status = normalizePullRequestStatus(record.status);
+      const contentRef = status === "deleted" ? baseRef : headRef;
+      const content = await readRepositoryFileFromGitHubRef({
+        octokit,
+        owner,
+        repo,
+        filePath: record.filename,
+        ref: contentRef,
+      });
+
+      return {
+        path: record.filename,
+        previousPath: record.previous_filename,
+        name: path.basename(record.filename),
+        content,
+        status,
+        language: fileLanguage(record.filename),
+        patch:
+          typeof record.patch === "string" && record.patch.trim().length > 0
+            ? record.patch.trim()
+            : undefined,
+      } satisfies ReviewFileInput;
+    }),
+  );
 }
 
 export async function collectReviewContext(

@@ -17,7 +17,7 @@ inputs:
     description: ASU model name to use for the review.
     required: true
   github-token:
-    description: GitHub token with pull-requests write access used to post inline PR comments.
+    description: GitHub token used for pull request file discovery and inline review comments; pull-requests write is required to post comments.
     required: false
   post-inline-comments:
     description: Whether to post short inline comments for mapped findings on pull request changed lines.

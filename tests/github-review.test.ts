@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createReview, getOctokit } = vi.hoisted(() => {
+const { createReview, getOctokit, listReviewComments } = vi.hoisted(() => {
   const createReviewMock = vi.fn();
+  const listReviewCommentsMock = vi.fn();
   const getOctokitMock = vi.fn(() => ({
     rest: {
       pulls: {
         createReview: createReviewMock,
+        listReviewComments: listReviewCommentsMock,
       },
     },
   }));
@@ -13,6 +15,7 @@ const { createReview, getOctokit } = vi.hoisted(() => {
   return {
     createReview: createReviewMock,
     getOctokit: getOctokitMock,
+    listReviewComments: listReviewCommentsMock,
   };
 });
 
@@ -25,6 +28,8 @@ import { publishInlineReview } from "../src/core/github-review";
 describe("github review publisher", () => {
   beforeEach(() => {
     createReview.mockReset();
+    listReviewComments.mockReset();
+    listReviewComments.mockResolvedValue({ data: [] });
     getOctokit.mockClear();
   });
 
@@ -60,6 +65,7 @@ describe("github review publisher", () => {
         {
           path: "src/math.ts",
           line: 12,
+          startLine: 10,
           body: "[HIGH] Guard overflow handling",
           severity: "high",
           title: "Guard overflow handling",
@@ -75,11 +81,55 @@ describe("github review publisher", () => {
         pull_number: 10,
         commit_id: "abc123",
         event: "COMMENT",
+        comments: [
+          {
+            path: "src/math.ts",
+            line: 12,
+            side: "RIGHT",
+            start_line: 10,
+            start_side: "RIGHT",
+            body: "[HIGH] Guard overflow handling",
+          },
+        ],
       }),
     );
     expect(result).toEqual({
       postedCount: 1,
       reviewId: 42,
     });
+  });
+
+  it("skips posting when all inline comments already exist", async () => {
+    listReviewComments.mockResolvedValue({
+      data: [
+        {
+          path: "src/math.ts",
+          line: 12,
+          start_line: 10,
+          body: "[HIGH] Guard overflow handling",
+        },
+      ],
+    });
+
+    const result = await publishInlineReview({
+      githubToken: "token",
+      owner: "octo",
+      repo: "repo",
+      pullNumber: 10,
+      reviewBody: "CCR inline review comments",
+      comments: [
+        {
+          path: "src/math.ts",
+          line: 12,
+          startLine: 10,
+          body: "[HIGH] Guard overflow handling",
+          severity: "high",
+          title: "Guard overflow handling",
+        },
+      ],
+    });
+
+    expect(createReview).not.toHaveBeenCalled();
+    expect(result).toEqual({ postedCount: 0 });
   });
 });

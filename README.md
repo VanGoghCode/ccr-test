@@ -6,7 +6,7 @@ The repository also includes a local sandbox UI so you can test the action logic
 
 ## What It Does
 
-- Collects changed files from a PR or explicit git range.
+- Collects changed files from the pull request API when PR context is available, or falls back to explicit local git ranges.
 - Feeds changed file content, git range context, and commit messages into a shared review engine.
 - Runs one of three architectures:
   - `single-pass`: one review call over the entire change set.
@@ -90,7 +90,8 @@ permissions:
   pull-requests: write
 ```
 
-When the action runs on pull request events, use `actions/checkout@v5` with `fetch-depth: 0` so the diff range can be resolved reliably.
+For `pull_request` runs with `github-token`, checkout is optional because changed files and patches are collected through GitHub pull request APIs.
+Use `actions/checkout@v5` with `fetch-depth: 0` when you rely on non-PR execution or explicit `base-ref`/`head-ref` local git diff workflows.
 
 ## Example Workflow
 
@@ -111,10 +112,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
       - name: Run CCR review
         uses: your-org/your-repo@v1
         with:
@@ -225,5 +222,7 @@ npm run typecheck
 ## Notes
 
 - The action always writes a markdown report (default `CCR.md`, configurable via `output-path`). Inline PR comments are optional and require `post-inline-comments: "true"` plus `pull-requests: write` permission.
+- Inline PR comments are published as pull request review comments and support single-line or block ranges when findings include `line` and `endLine`.
+- Pull request mode deduplicates against existing inline review comments to avoid reposting identical comments on every synchronize event.
 - Update prompts in this repository and release a new tag when you want all repositories using this action to get new review behavior.
 - The sandbox and the action share the same engine so local tests mirror the publishable behavior.

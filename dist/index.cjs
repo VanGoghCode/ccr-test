@@ -23873,11 +23873,11 @@ var require_github = __commonJS({
     var Context = __importStar(require_context());
     var utils_1 = require_utils4();
     exports2.context = new Context.Context();
-    function getOctokit2(token, options, ...additionalPlugins) {
+    function getOctokit3(token, options, ...additionalPlugins) {
       const GitHubWithPlugins = utils_1.GitHub.plugin(...additionalPlugins);
       return new GitHubWithPlugins((0, utils_1.getOctokitOptions)(token, options));
     }
-    exports2.getOctokit = getOctokit2;
+    exports2.getOctokit = getOctokit3;
   }
 });
 
@@ -29935,7 +29935,8 @@ function buildSystemMessage(architecture, stageLabel, stagePurpose, mode) {
     "Return a JSON object with the following keys: summary, riskLevel, findings, todos, notes.",
     "Risk level must be one of low, medium, or high.",
     "Findings should be an array of objects with severity, title, detail, optional file, optional line, optional endLine, and optional recommendation or suggestion fields.",
-    "When a finding maps to a changed file, set file and line to the changed-line anchor in the head revision.",
+    "When a finding maps to a changed file, set file and line to an exact changed-line anchor in the head revision.",
+    "When a finding spans a changed block, set line to the first changed line and endLine to the last changed line in that block.",
     "Use reviewContext.commitMessages to understand intent and flag mismatches between commit intent and code changes.",
     "Keep detail and recommendation concise so each finding can be posted as a short inline review comment.",
     "If previousOutputsParsed is present, use it as the authoritative previous-stage context to avoid escaped JSON artifacts.",
@@ -30245,6 +30246,7 @@ var import_node_child_process = require("node:child_process");
 var import_promises = require("node:fs/promises");
 var import_node_path = __toESM(require("node:path"), 1);
 var import_node_util = require("node:util");
+var github = __toESM(require_github(), 1);
 var import_picomatch = __toESM(require_picomatch2(), 1);
 var execFileAsync = (0, import_node_util.promisify)(import_node_child_process.execFile);
 var COMMIT_FIELD_SEPARATOR = "";
@@ -30277,6 +30279,21 @@ function normalizeStatus(status) {
     return "renamed";
   }
   if (status.startsWith("C")) {
+    return "copied";
+  }
+  return "modified";
+}
+function normalizePullRequestStatus(status) {
+  if (status === "added") {
+    return "added";
+  }
+  if (status === "removed") {
+    return "deleted";
+  }
+  if (status === "renamed") {
+    return "renamed";
+  }
+  if (status === "copied") {
     return "copied";
   }
   return "modified";
@@ -30379,6 +30396,29 @@ async function readFileAtRef(repositoryRoot, ref, filePath) {
     return (0, import_promises.readFile)(diskPath, "utf8");
   }
 }
+async function readRepositoryFileFromGitHubRef(params) {
+  try {
+    const response = await params.octokit.rest.repos.getContent({
+      owner: params.owner,
+      repo: params.repo,
+      path: params.filePath,
+      ref: params.ref
+    });
+    const data = response.data;
+    if (Array.isArray(data) || data.type !== "file") {
+      return "";
+    }
+    if (typeof data.content !== "string") {
+      return "";
+    }
+    if (data.encoding === "base64") {
+      return Buffer.from(data.content, "base64").toString("utf8");
+    }
+    return data.content;
+  } catch {
+    return "";
+  }
+}
 async function resolveGitRange(repositoryRoot, context2, fallbackHead = "HEAD") {
   if (context2.baseRef && context2.headRef) {
     return {
@@ -30461,6 +30501,58 @@ async function collectReviewFiles(options) {
   }
   return files;
 }
+async function collectPullRequestReviewFiles(options) {
+  const {
+    githubToken,
+    owner,
+    repo,
+    pullNumber,
+    baseRef,
+    headRef,
+    includeGlobs,
+    excludeGlobs,
+    maxFiles = 25
+  } = options;
+  const octokit = github.getOctokit(githubToken);
+  const listedFiles = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100
+  });
+  const fileRecords = listedFiles;
+  const selectedPaths = filterReviewPaths(
+    fileRecords.map((entry) => entry.filename),
+    includeGlobs,
+    excludeGlobs
+  ).slice(0, maxFiles);
+  const selectedPathSet = new Set(selectedPaths);
+  const selectedRecords = fileRecords.filter(
+    (record) => selectedPathSet.has(record.filename)
+  );
+  return Promise.all(
+    selectedRecords.map(async (record) => {
+      const status = normalizePullRequestStatus(record.status);
+      const contentRef = status === "deleted" ? baseRef : headRef;
+      const content = await readRepositoryFileFromGitHubRef({
+        octokit,
+        owner,
+        repo,
+        filePath: record.filename,
+        ref: contentRef
+      });
+      return {
+        path: record.filename,
+        previousPath: record.previous_filename,
+        name: import_node_path.default.basename(record.filename),
+        content,
+        status,
+        language: fileLanguage(record.filename),
+        patch: typeof record.patch === "string" && record.patch.trim().length > 0 ? record.patch.trim() : void 0
+      };
+    })
+  );
+}
 async function collectReviewContext(repositoryRoot, context2) {
   const range = await resolveGitRange(repositoryRoot, context2, "HEAD");
   let commitMessages = context2.commitMessages ?? [];
@@ -30482,30 +30574,81 @@ async function collectReviewContext(repositoryRoot, context2) {
 }
 
 // src/core/github-review.ts
-var github = __toESM(require_github(), 1);
+var github2 = __toESM(require_github(), 1);
+function normalizePath(pathValue) {
+  return pathValue.trim().replaceAll("\\", "/").toLowerCase();
+}
+function normalizeCommentBody(body) {
+  return body.trim().replaceAll(/\s+/g, " ").toLowerCase();
+}
+function toCommentDedupeKey(comment) {
+  const normalizedLine = Math.round(comment.line);
+  const normalizedStartLine = typeof comment.startLine === "number" && comment.startLine < normalizedLine ? Math.round(comment.startLine) : normalizedLine;
+  return [
+    normalizePath(comment.path),
+    String(normalizedStartLine),
+    String(normalizedLine),
+    normalizeCommentBody(comment.body)
+  ].join(":");
+}
 async function publishInlineReview(params) {
   if (params.comments.length === 0) {
     return {
       postedCount: 0
     };
   }
-  const octokit = github.getOctokit(params.githubToken);
+  const octokit = github2.getOctokit(params.githubToken);
+  const existingCommentsResponse = await octokit.rest.pulls.listReviewComments({
+    owner: params.owner,
+    repo: params.repo,
+    pull_number: params.pullNumber,
+    per_page: 100
+  });
+  const existingCommentKeys = /* @__PURE__ */ new Set();
+  for (const comment of existingCommentsResponse.data) {
+    if (typeof comment.path !== "string" || typeof comment.line !== "number" || typeof comment.body !== "string") {
+      continue;
+    }
+    existingCommentKeys.add(
+      toCommentDedupeKey({
+        path: comment.path,
+        line: comment.line,
+        startLine: typeof comment.start_line === "number" ? comment.start_line : void 0,
+        body: comment.body
+      })
+    );
+  }
+  const commentsToPost = params.comments.filter(
+    (comment) => !existingCommentKeys.has(toCommentDedupeKey(comment))
+  );
+  if (commentsToPost.length === 0) {
+    return {
+      postedCount: 0
+    };
+  }
   const response = await octokit.rest.pulls.createReview({
     owner: params.owner,
     repo: params.repo,
     pull_number: params.pullNumber,
     event: "COMMENT",
     body: params.reviewBody,
-    comments: params.comments.map((comment) => ({
-      path: comment.path,
-      line: comment.line,
-      side: "RIGHT",
-      body: comment.body
-    })),
+    comments: commentsToPost.map((comment) => {
+      const hasRange = typeof comment.startLine === "number" && comment.startLine < comment.line;
+      return {
+        path: comment.path,
+        line: comment.line,
+        side: "RIGHT",
+        ...hasRange ? {
+          start_line: comment.startLine,
+          start_side: "RIGHT"
+        } : {},
+        body: comment.body
+      };
+    }),
     commit_id: params.commitId
   });
   return {
-    postedCount: params.comments.length,
+    postedCount: commentsToPost.length,
     reviewId: response.data.id
   };
 }
@@ -30710,7 +30853,7 @@ function createSkipCounter() {
     duplicate: 0
   };
 }
-function normalizePath(pathValue) {
+function normalizePath2(pathValue) {
   return pathValue.replaceAll("\\", "/").trim().toLowerCase();
 }
 function clampText(value, maxLength) {
@@ -30742,15 +30885,15 @@ function sortBySeverity(findings) {
   });
 }
 function resolveFileRecord(findingFile, files) {
-  const normalizedTarget = normalizePath(findingFile);
+  const normalizedTarget = normalizePath2(findingFile);
   const exact = files.find(
-    (file) => normalizePath(file.path) === normalizedTarget
+    (file) => normalizePath2(file.path) === normalizedTarget
   );
   if (exact) {
     return exact;
   }
   const suffixMatches = files.filter((file) => {
-    const normalizedFilePath = normalizePath(file.path);
+    const normalizedFilePath = normalizePath2(file.path);
     return normalizedFilePath.endsWith(`/${normalizedTarget}`) || normalizedFilePath.endsWith(normalizedTarget);
   });
   if (suffixMatches.length === 0) {
@@ -30785,11 +30928,27 @@ ${finding.detail}`,
   if (typeof resolvedLine !== "number") {
     return { reason: "unresolved-line" };
   }
-  const dedupeKey = `${fileRecord.path}:${resolvedLine}:${finding.title.trim().toLowerCase()}`;
+  let resolvedStartLine = resolvedLine;
+  let resolvedEndLine = resolvedLine;
+  if (typeof finding.endLine === "number" && Number.isFinite(finding.endLine)) {
+    const resolvedRangeLine = resolveChangedLine({
+      patchMap,
+      requestedLine: finding.endLine,
+      searchText: finding.detail,
+      allowFallbackToFirstChangedLine
+    });
+    if (typeof resolvedRangeLine === "number") {
+      resolvedStartLine = Math.min(resolvedLine, resolvedRangeLine);
+      resolvedEndLine = Math.max(resolvedLine, resolvedRangeLine);
+    }
+  }
+  const startLine = resolvedStartLine < resolvedEndLine ? resolvedStartLine : void 0;
+  const dedupeKey = `${fileRecord.path}:${startLine ?? resolvedEndLine}:${resolvedEndLine}:${finding.title.trim().toLowerCase()}`;
   return {
     candidate: {
       path: fileRecord.path,
-      line: resolvedLine,
+      line: resolvedEndLine,
+      startLine,
       body: formatInlineCommentBody(finding),
       severity: finding.severity,
       title: finding.title,
@@ -30837,6 +30996,7 @@ function buildInlineReviewComments(options) {
     comments.push({
       path: candidate.path,
       line: candidate.line,
+      startLine: candidate.startLine,
       body: candidate.body,
       severity: candidate.severity,
       title: candidate.title
@@ -31194,9 +31354,7 @@ function readInlineCommentStrategyInput(name, fallback) {
   if (normalized === "findings" || normalized === "file-coverage") {
     return normalized;
   }
-  throw new Error(
-    `Input ${name} must be one of: findings, file-coverage.`
-  );
+  throw new Error(`Input ${name} must be one of: findings, file-coverage.`);
 }
 function getPullRequestNumber() {
   const pullRequest = import_github.context.payload.pull_request;
@@ -31271,7 +31429,20 @@ async function main() {
       headRef: core.getInput("head-ref") || void 0
     });
     const gitRange = await resolveGitRange(repoRoot, reviewContext, "HEAD");
-    const files = await collectReviewFiles({
+    const pullRequestNumber = getPullRequestNumber();
+    const repositoryOwner = import_github.context.repo.owner;
+    const repositoryName = import_github.context.repo.repo;
+    const files = pullRequestNumber && githubToken && repositoryOwner && repositoryName ? await collectPullRequestReviewFiles({
+      githubToken,
+      owner: repositoryOwner,
+      repo: repositoryName,
+      pullNumber: pullRequestNumber,
+      baseRef: gitRange.baseRef,
+      headRef: gitRange.headRef,
+      includeGlobs,
+      excludeGlobs,
+      maxFiles
+    }) : await collectReviewFiles({
       repositoryRoot: repoRoot,
       range: gitRange,
       includeGlobs,
@@ -31279,6 +31450,16 @@ async function main() {
       maxFiles,
       repositoryName: reviewContext.repositoryName
     });
+    if (pullRequestNumber && (!repositoryOwner || !repositoryName)) {
+      logger.warn(
+        "Pull request API file collection skipped because repository metadata is unavailable."
+      );
+    }
+    if (pullRequestNumber && !githubToken) {
+      logger.warn(
+        "Pull request API file collection skipped because github-token is not configured; falling back to local git diff."
+      );
+    }
     if (files.length === 0) {
       logger.warn("No files matched the review filters.");
     }
@@ -31302,7 +31483,6 @@ async function main() {
     let inlineCommentsPosted = 0;
     let inlineCommentsSkipped = 0;
     if (postInlineComments) {
-      const pullRequestNumber = getPullRequestNumber();
       if (!pullRequestNumber) {
         logger.warn(
           "Inline comment posting skipped because pull_request context is unavailable."
@@ -31333,17 +31513,15 @@ async function main() {
             );
           }
         } else {
-          const owner = import_github.context.repo.owner;
-          const repo = import_github.context.repo.repo;
-          if (!owner || !repo) {
+          if (!repositoryOwner || !repositoryName) {
             logger.warn(
               "Inline comment posting skipped because repository metadata is unavailable."
             );
           } else {
             const publishResult = await publishInlineReview({
               githubToken,
-              owner,
-              repo,
+              owner: repositoryOwner,
+              repo: repositoryName,
               pullNumber: pullRequestNumber,
               commitId: getPullRequestHeadSha(),
               comments: inlineCommentResult.comments,

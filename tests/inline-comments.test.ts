@@ -103,6 +103,30 @@ describe("inline comments", () => {
     expect(result.comments[0]?.title).toBe("First");
   });
 
+  it("maps multiline findings to start_line and end line anchors", () => {
+    const result = buildInlineReviewComments({
+      findings: [
+        {
+          severity: "high",
+          title: "Range should map to changed block",
+          detail: "This finding covers multiple changed lines.",
+          file: "src/math.ts",
+          line: 2,
+          endLine: 3,
+        },
+      ],
+      files,
+      maxComments: 5,
+    });
+
+    expect(result.comments).toHaveLength(1);
+    expect(result.comments[0]).toMatchObject({
+      path: "src/math.ts",
+      startLine: 2,
+      line: 3,
+    });
+  });
+
   it("prioritizes one comment per file with file-coverage mode", () => {
     const result = buildInlineReviewComments({
       findings: [

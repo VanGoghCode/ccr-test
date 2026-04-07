@@ -8,14 +8,15 @@ import {
 } from "./core/api.js";
 import { runReviewArchitecture } from "./core/engine.js";
 import {
+  collectPullRequestReviewFiles,
   collectReviewContext,
   collectReviewFiles,
   resolveGitRange,
 } from "./core/git.js";
 import { publishInlineReview } from "./core/github-review.js";
 import {
-  buildInlineReviewComments,
   type InlineCommentStrategy,
+  buildInlineReviewComments,
 } from "./core/inline-comments.js";
 import { createAsuAimlProvider } from "./core/llm.js";
 import { createLogger } from "./core/logging.js";
@@ -97,9 +98,7 @@ function readInlineCommentStrategyInput(
     return normalized;
   }
 
-  throw new Error(
-    `Input ${name} must be one of: findings, file-coverage.`,
-  );
+  throw new Error(`Input ${name} must be one of: findings, file-coverage.`);
 }
 
 function getPullRequestNumber(): number | undefined {
@@ -192,14 +191,43 @@ async function main(): Promise<void> {
       headRef: core.getInput("head-ref") || undefined,
     });
     const gitRange = await resolveGitRange(repoRoot, reviewContext, "HEAD");
-    const files = await collectReviewFiles({
-      repositoryRoot: repoRoot,
-      range: gitRange,
-      includeGlobs,
-      excludeGlobs,
-      maxFiles,
-      repositoryName: reviewContext.repositoryName,
-    });
+    const pullRequestNumber = getPullRequestNumber();
+    const repositoryOwner = context.repo.owner;
+    const repositoryName = context.repo.repo;
+
+    const files =
+      pullRequestNumber && githubToken && repositoryOwner && repositoryName
+        ? await collectPullRequestReviewFiles({
+            githubToken,
+            owner: repositoryOwner,
+            repo: repositoryName,
+            pullNumber: pullRequestNumber,
+            baseRef: gitRange.baseRef,
+            headRef: gitRange.headRef,
+            includeGlobs,
+            excludeGlobs,
+            maxFiles,
+          })
+        : await collectReviewFiles({
+            repositoryRoot: repoRoot,
+            range: gitRange,
+            includeGlobs,
+            excludeGlobs,
+            maxFiles,
+            repositoryName: reviewContext.repositoryName,
+          });
+
+    if (pullRequestNumber && (!repositoryOwner || !repositoryName)) {
+      logger.warn(
+        "Pull request API file collection skipped because repository metadata is unavailable.",
+      );
+    }
+
+    if (pullRequestNumber && !githubToken) {
+      logger.warn(
+        "Pull request API file collection skipped because github-token is not configured; falling back to local git diff.",
+      );
+    }
 
     if (files.length === 0) {
       logger.warn("No files matched the review filters.");
@@ -229,7 +257,6 @@ async function main(): Promise<void> {
     let inlineCommentsSkipped = 0;
 
     if (postInlineComments) {
-      const pullRequestNumber = getPullRequestNumber();
       if (!pullRequestNumber) {
         logger.warn(
           "Inline comment posting skipped because pull_request context is unavailable.",
@@ -261,18 +288,15 @@ async function main(): Promise<void> {
             );
           }
         } else {
-          const owner = context.repo.owner;
-          const repo = context.repo.repo;
-
-          if (!owner || !repo) {
+          if (!repositoryOwner || !repositoryName) {
             logger.warn(
               "Inline comment posting skipped because repository metadata is unavailable.",
             );
           } else {
             const publishResult = await publishInlineReview({
               githubToken,
-              owner,
-              repo,
+              owner: repositoryOwner,
+              repo: repositoryName,
               pullNumber: pullRequestNumber,
               commitId: getPullRequestHeadSha(),
               comments: inlineCommentResult.comments,

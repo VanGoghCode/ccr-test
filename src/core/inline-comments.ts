@@ -28,6 +28,7 @@ export type InlineCommentSkipReason = (typeof SKIP_REASON_KEYS)[number];
 export interface InlineReviewComment {
   path: string;
   line: number;
+  startLine?: number;
   body: string;
   severity: ReviewSeverity;
   title: string;
@@ -52,6 +53,7 @@ export type InlineCommentStrategy = "findings" | "file-coverage";
 interface InlineCommentCandidate {
   path: string;
   line: number;
+  startLine?: number;
   body: string;
   severity: ReviewSeverity;
   title: string;
@@ -182,11 +184,34 @@ function resolveInlineCommentCandidate(params: {
     return { reason: "unresolved-line" };
   }
 
-  const dedupeKey = `${fileRecord.path}:${resolvedLine}:${finding.title.trim().toLowerCase()}`;
+  let resolvedStartLine = resolvedLine;
+  let resolvedEndLine = resolvedLine;
+
+  if (typeof finding.endLine === "number" && Number.isFinite(finding.endLine)) {
+    const resolvedRangeLine = resolveChangedLine({
+      patchMap,
+      requestedLine: finding.endLine,
+      searchText: finding.detail,
+      allowFallbackToFirstChangedLine,
+    });
+
+    if (typeof resolvedRangeLine === "number") {
+      resolvedStartLine = Math.min(resolvedLine, resolvedRangeLine);
+      resolvedEndLine = Math.max(resolvedLine, resolvedRangeLine);
+    }
+  }
+
+  const startLine =
+    resolvedStartLine < resolvedEndLine ? resolvedStartLine : undefined;
+
+  const dedupeKey = `${fileRecord.path}:${startLine ?? resolvedEndLine}:${resolvedEndLine}:${finding.title
+    .trim()
+    .toLowerCase()}`;
   return {
     candidate: {
       path: fileRecord.path,
-      line: resolvedLine,
+      line: resolvedEndLine,
+      startLine,
       body: formatInlineCommentBody(finding),
       severity: finding.severity,
       title: finding.title,
@@ -249,6 +274,7 @@ export function buildInlineReviewComments(
     comments.push({
       path: candidate.path,
       line: candidate.line,
+      startLine: candidate.startLine,
       body: candidate.body,
       severity: candidate.severity,
       title: candidate.title,
